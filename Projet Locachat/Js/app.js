@@ -1,379 +1,582 @@
-(function(){
-var CITIES=['Brazzaville','Pointe-Noire','Dolisie','Nkayi','Oyo','Owando'];
-var CATS=[['tech','Téléphones & high-tech'],['elec','Électroménager'],['mode','Mode'],['serv','Services'],['loc','Location de matériel']];
-var SOON=['Terrains','Véhicules','Immobilier'];
-var REASONS=['Arnaque ou faux article','Article interdit','Mauvaise catégorie','Photos trompeuses','Autre'];
-var MAX_PHOTOS=4;
-function load(k,d){try{var v=localStorage.getItem(k);return v?JSON.parse(v):d}catch(e){return d}}
-function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));return true}catch(e){return false}}
-function digits(s){return String(s).replace(/\D/g,'')}
-function fmtPhone(d){return d.replace(/(\d{2})(\d{3})(\d{2})(\d{2,})/,'$1 $2 $3 $4')}
+import * as api from './api.js';
+import { prepareImage } from './images.js';
 
-var users=load('lc_users',[]);
-var uid=load('lc_session',null);
-(function migrate(){
- var old=load('lc_user',null);
- if(old&&old.id&&!users.some(function(u){return u.id===old.id})){users.push(old);save('lc_users',users);if(!uid){uid=old.id;save('lc_session',uid)}}
- try{localStorage.removeItem('lc_user')}catch(e){}
-})();
-var items=load('lc_items',[]);
-var favs=load('lc_favs',{});
-var reviews=load('lc_reviews',[]);
-var user=null;
-users.forEach(function(u){if(u.id===uid)user=u});
-var st={q:'',city:'',cat:'',type:'',sort:'recent',chats:{},open:null,photos:[],imgIdx:0,auth:null,after:null,confirmDel:null,editId:null,tab:'mine',delAcc:false};
+/* =====================================================================
+   LOCACHAT : le site. Ce fichier gère l'affichage et les clics.
+   Tout ce qui touche à la base de données est dans api.js.
+   ===================================================================== */
 
-function $(s){return document.querySelector(s)}
-function esc(s){return String(s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]})}
-function fmt(n){return new Intl.NumberFormat('fr-FR').format(n).replace(/[\u202f\u00a0]/g,'\u00a0')+'\u00a0FCFA'}
-function ago(ts){var m=Math.max(0,Math.round((Date.now()-ts)/60000));if(m<2)return 'à l’instant';if(m<60)return 'il y a '+m+' min';if(m<1440)return 'il y a '+Math.round(m/60)+' h';return 'il y a '+Math.round(m/1440)+' j'}
-function catLabel(id){for(var i=0;i<CATS.length;i++)if(CATS[i][0]===id)return CATS[i][1];return ''}
-function find(id){for(var i=0;i<items.length;i++)if(items[i].id===id)return items[i]}
-function stars(n){var r=Math.round(n);return '★★★★★'.slice(0,r)+'☆☆☆☆☆'.slice(0,5-r)}
-function sellerStats(oid){var l=reviews.filter(function(r){return r.about===oid});var s=0;l.forEach(function(r){s+=r.rating});return {n:l.length,avg:l.length?s/l.length:0,list:l}}
-var CHECK='<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1l2 1.5 2.5-.2.8 2.4 2.1 1.4-.9 2.3.9 2.3-2.1 1.4-.8 2.4-2.5-.2L8 15l-2-1.5-2.5.2-.8-2.4L.6 9.9l.9-2.3-.9-2.3L2.7 3.9l.8-2.4L6 1.7z" fill="currentColor"/><path d="M5.2 8.2l2 2 3.6-3.8" fill="none" stroke="#fff" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>';
-var HEART='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21s-7-4.4-9.3-8.6C1 9 2.8 5.5 6 5.5c2 0 3.2 1.1 4 2.2.8-1.1 2-2.2 4-2.2 3.2 0 5 3.5 3.3 6.9C19 16.6 12 21 12 21z" fill="currentColor"/></svg>';
-var ICONS={
- tech:'<rect x="47" y="12" width="26" height="56" rx="6" fill="currentColor" opacity=".8"/><circle cx="60" cy="60" r="2.5" fill="var(--surface2)"/>',
- elec:'<rect x="44" y="10" width="32" height="60" rx="4" fill="currentColor" opacity=".8"/><rect x="44" y="30" width="32" height="2.5" fill="var(--surface2)"/><rect x="50" y="18" width="3" height="8" rx="1.5" fill="var(--surface2)"/><rect x="50" y="38" width="3" height="14" rx="1.5" fill="var(--surface2)"/>',
- mode:'<path d="M42 14L54 9Q60 16 66 9L78 14L92 27L82 33L78 29L78 70L42 70L42 29L38 33L28 27Z" fill="currentColor" opacity=".8"/>',
- serv:'<g transform="rotate(35 60 40)"><rect x="56" y="16" width="8" height="52" rx="3" fill="currentColor" opacity=".8"/><rect x="40" y="12" width="40" height="15" rx="3" fill="currentColor"/></g>',
- loc:'<rect x="40" y="9" width="40" height="62" rx="6" fill="currentColor" opacity=".8"/><circle cx="60" cy="26" r="8" fill="var(--surface2)"/><circle cx="60" cy="52" r="13" fill="var(--surface2)"/><circle cx="60" cy="52" r="6" fill="currentColor"/>'
+const CITIES = ['Brazzaville', 'Pointe-Noire', 'Dolisie', 'Nkayi', 'Oyo', 'Owando'];
+const CATS = [['tech', 'Téléphones & high-tech'], ['elec', 'Électroménager'], ['mode', 'Mode'], ['serv', 'Services'], ['loc', 'Location de matériel']];
+const SOON = ['Terrains', 'Véhicules', 'Immobilier'];
+const REASONS = ['Arnaque ou faux article', 'Article interdit', 'Mauvaise catégorie', 'Photos trompeuses', 'Autre'];
+const MAX_PHOTOS = 4;
+
+/* ---------- Petits outils ---------- */
+const $ = s => document.querySelector(s);
+const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const fmt = n => new Intl.NumberFormat('fr-FR').format(n).replace(/[  ]/g, ' ') + ' FCFA';
+const catLabel = id => (CATS.find(c => c[0] === id) || ['', ''])[1];
+const timeOf = ts => new Date(ts).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+function ago(ts) {
+  const m = Math.max(0, Math.round((Date.now() - ts) / 60000));
+  if (m < 2) return 'à l’instant';
+  if (m < 60) return 'il y a ' + m + ' min';
+  if (m < 1440) return 'il y a ' + Math.round(m / 60) + ' h';
+  return 'il y a ' + Math.round(m / 1440) + ' j';
+}
+// "Aïcha Moukala" devient "Aïcha M." (on n'affiche pas les noms complets)
+function shortName(n) {
+  const p = String(n || '').trim().split(/\s+/);
+  return p.length > 1 ? p[0] + ' ' + p[p.length - 1][0].toUpperCase() + '.' : (p[0] || 'Utilisateur');
+}
+const store = {
+  get(k, d) { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch (e) { return d; } },
+  set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) { /* tant pis */ } }
 };
-function art(cat){
- return '<svg viewBox="0 0 120 80" preserveAspectRatio="xMidYMid slice" aria-hidden="true"><polygon points="70,0 100,0 40,80 10,80" fill="#F2C200" opacity=".22"/><polygon points="100,0 120,0 120,16 56,80 40,80" fill="#CF2A22" opacity=".14"/><polygon points="0,0 70,0 10,80 0,80" fill="#00873E" opacity=".12"/>'+(ICONS[cat]||'')+'</svg>';
-}
-function pic(it,i){var im=it.imgs&&it.imgs[i||0];return im?'<img src="'+esc(im)+'" alt="'+esc(it.t)+'">':art(it.cat)}
-function priceHtml(it){return '<span class="price num">'+fmt(it.price)+(it.per?' <small>'+esc(it.per)+'</small>':'')+'</span>'}
-function myFavs(){return (user&&favs[user.id])||[]}
-function isFav(id){return myFavs().indexOf(id)>=0}
 
-/* thème */
-function applyTheme(t){var r=document.documentElement;if(t==='light'||t==='dark')r.setAttribute('data-theme',t);else r.removeAttribute('data-theme')}
-applyTheme(load('lc_theme','auto'));
+const ICONS = {
+  tech: '<rect x="47" y="12" width="26" height="56" rx="6" fill="currentColor" opacity=".8"/><circle cx="60" cy="60" r="2.5" fill="var(--surface2)"/>',
+  elec: '<rect x="44" y="10" width="32" height="60" rx="4" fill="currentColor" opacity=".8"/><rect x="44" y="30" width="32" height="2.5" fill="var(--surface2)"/><rect x="50" y="18" width="3" height="8" rx="1.5" fill="var(--surface2)"/><rect x="50" y="38" width="3" height="14" rx="1.5" fill="var(--surface2)"/>',
+  mode: '<path d="M42 14L54 9Q60 16 66 9L78 14L92 27L82 33L78 29L78 70L42 70L42 29L38 33L28 27Z" fill="currentColor" opacity=".8"/>',
+  serv: '<g transform="rotate(35 60 40)"><rect x="56" y="16" width="8" height="52" rx="3" fill="currentColor" opacity=".8"/><rect x="40" y="12" width="40" height="15" rx="3" fill="currentColor"/></g>',
+  loc: '<rect x="40" y="9" width="40" height="62" rx="6" fill="currentColor" opacity=".8"/><circle cx="60" cy="26" r="8" fill="var(--surface2)"/><circle cx="60" cy="52" r="13" fill="var(--surface2)"/><circle cx="60" cy="52" r="6" fill="currentColor"/>'
+};
+function art(cat) {
+  return '<svg viewBox="0 0 120 80" preserveAspectRatio="xMidYMid slice" aria-hidden="true"><polygon points="70,0 100,0 40,80 10,80" fill="#F2C200" opacity=".22"/><polygon points="100,0 120,0 120,16 56,80 40,80" fill="#CF2A22" opacity=".14"/><polygon points="0,0 70,0 10,80 0,80" fill="#00873E" opacity=".12"/>' + (ICONS[cat] || '') + '</svg>';
+}
+const priceHtml = l => `<span class="price num">${fmt(l.price)}${l.type === 'location' ? ' <small>/ jour</small>' : ''}</span>`;
 
-/* en-tête */
-function renderAcct(){
- $('#acct').innerHTML=user
-  ?'<button type="button" class="btn ghost sm" data-a="account">Bonjour, '+esc(user.name.split(' ')[0])+'</button><button type="button" class="btn ghost sm" data-a="logout">Déconnexion</button><button type="button" class="btn" data-a="publish">Déposer une annonce</button>'
-  :'<button type="button" class="btn ghost" data-a="login">Se connecter</button><button type="button" class="btn" data-a="publish">Déposer une annonce</button>';
-}
+/* ---------- État du site (ce que le site "retient" pendant qu'il est ouvert) ---------- */
+const st = {
+  q: '', city: '', cat: '', type: '', sort: 'recent',
+  items: [], total: 0, page: 0, loading: false, err: null, tok: 0,
+  user: null, profile: null, unread: 0, after: null,
+  ov: null, ovTok: 0, listing: null, imgIdx: 0, form: null, conv: null, convs: [], mine: [],
+  tab: 'mine', delAcc: false, confirmDel: null
+};
 
-/* liste */
-function visible(){
- var q=st.q.trim().toLowerCase();
- var r=items.filter(function(it){
-  if(st.cat&&it.cat!==st.cat)return false;
-  if(st.city&&it.city!==st.city)return false;
-  if(st.type&&it.type!==st.type)return false;
-  if(q&&(it.t+' '+it.desc+' '+catLabel(it.cat)).toLowerCase().indexOf(q)<0)return false;
-  return true;
- });
- r.sort(function(a,b){
-  if(!!a.sold!==!!b.sold)return a.sold?1:-1;
-  if(st.sort==='asc')return a.price-b.price;
-  if(st.sort==='desc')return b.price-a.price;
-  return b.ts-a.ts;
- });
- return r;
+/* ---------- Thème clair / sombre ---------- */
+function applyTheme(t) {
+  const r = document.documentElement;
+  if (t === 'light' || t === 'dark') r.setAttribute('data-theme', t); else r.removeAttribute('data-theme');
 }
-function cardHtml(it){
- return '<article class="card'+(it.sold?' sold':'')+'"><button type="button" class="cardbtn" data-a="open" data-id="'+it.id+'"><div class="tile">'+pic(it,0)+(it.sold?'<span class="badge sold">Vendu</span>':(it.type==='location'?'<span class="badge">Location</span>':''))+'</div><div class="cbody"><h3>'+esc(it.t)+'</h3>'+priceHtml(it)+'<div class="meta"><span>'+esc(it.city)+'</span><span>'+ago(it.ts)+'</span></div><div class="meta"><span class="tick">'+CHECK+'Numéro vérifié</span></div></div></button>'+
- '<button type="button" class="fav" data-a="fav" data-id="'+it.id+'" aria-pressed="'+(isFav(it.id)?'true':'false')+'" aria-label="Ajouter aux favoris">'+HEART+'</button></article>';
-}
-function renderGrid(){
- var r=visible();
- $('#count').textContent=r.length+(r.length>1?' annonces':' annonce');
- if(r.length){$('#grid').innerHTML=r.map(cardHtml).join('');return}
- $('#grid').innerHTML=!items.length
-  ?'<div class="empty"><h3>Aucune annonce pour le moment</h3><p>Locachat vient d’ouvrir. Soyez le premier à publier un article ou un service, avec des photos.</p><button type="button" class="btn" data-a="publish">Déposer la première annonce</button></div>'
-  :'<div class="empty"><h3>Aucun résultat</h3><p>Essayez une autre ville ou retirez un filtre.</p></div>';
-}
-function renderChips(){
- var h='<button type="button" class="chip" data-a="cat" data-c="" aria-pressed="'+(st.cat===''?'true':'false')+'">Tout</button>';
- CATS.forEach(function(c){h+='<button type="button" class="chip" data-a="cat" data-c="'+c[0]+'" aria-pressed="'+(st.cat===c[0]?'true':'false')+'">'+c[1]+'</button>'});
- SOON.forEach(function(s){h+='<span class="chip soon">'+s+'<small>Bientôt</small></span>'});
- $('#chips').innerHTML=h;
-}
+applyTheme(store.get('lc_theme', 'auto'));
 
-/* fenêtres */
-function openOv(html){$('#ov-body').innerHTML=html;$('#ov').hidden=false;$('#sheet').scrollTop=0;try{$('#sheet').focus()}catch(e){}}
-function closeOv(){$('#ov').hidden=true;st.open=null;st.photos=[];st.editId=null;st.delAcc=false}
-function toast(m){var t=$('#toast');t.textContent=m;t.hidden=false;clearTimeout(toast.h);toast.h=setTimeout(function(){t.hidden=true},3000)}
-function needLogin(after){st.after=after||null;showAuth('login')}
+/* ---------- Fenêtre (popup) et message rapide ---------- */
+function openOv(html, kind) {
+  st.ov = kind || null;
+  $('#ov-body').innerHTML = html;
+  $('#ov').hidden = false;
+  $('#sheet').scrollTop = 0;
+  try { $('#sheet').focus(); } catch (e) { /* rien */ }
+  return ++st.ovTok;
+}
+function closeOv() {
+  $('#ov').hidden = true;
+  st.ov = null; st.ovTok++; st.listing = null; st.form = null; st.conv = null; st.delAcc = false; st.confirmDel = null;
+}
+function toast(m) {
+  const t = $('#toast');
+  t.textContent = m; t.hidden = false;
+  clearTimeout(toast.h);
+  toast.h = setTimeout(() => { t.hidden = true; }, 3500);
+}
+const fail = e => toast(api.friendlyError(e));
 
-function showDetail(id,keepIdx){
- var it=find(id);if(!it)return;
- st.open=id;if(!keepIdx)st.imgIdx=0;
- var mine=user&&it.owner===user.id;
- var chat=st.chats[id]||[];
- var imgs=it.imgs||[];
- var ss=sellerStats(it.owner);
- var h='<h2>'+esc(it.t)+(it.sold?' <span class="tag" style="background:var(--red);color:#fff;vertical-align:middle">Vendu</span>':'')+'</h2><div class="dtile"><div class="tile">'+pic(it,st.imgIdx)+'</div></div>';
- if(imgs.length>1){h+='<div class="thumbs">'+imgs.map(function(s,i){return '<button type="button" data-a="img" data-i="'+i+'" aria-pressed="'+(i===st.imgIdx?'true':'false')+'" aria-label="Photo '+(i+1)+'"><img src="'+esc(s)+'" alt=""></button>'}).join('')+'</div>'}
- h+='<div class="row" style="margin-bottom:6px">'+priceHtml(it)+'<span>'+esc(it.city)+'</span><span>'+ago(it.ts)+'</span><span class="tag">'+esc(catLabel(it.cat))+'</span>'+(it.type==='location'?'<span class="tag">Location</span>':'')+'</div>';
- h+='<p style="margin:10px 0;overflow-wrap:anywhere">'+esc(it.desc)+'</p>';
- h+='<div class="row"><span><b style="color:var(--fg)">'+esc(it.seller)+'</b></span><span class="tag ok">'+CHECK.replace('<svg','<svg style="width:13px;height:13px"')+'Numéro vérifié</span>'+(ss.n?'<span><span class="stars">'+stars(ss.avg)+'</span> '+String(ss.avg.toFixed(1)).replace('.',',')+' · '+ss.n+(ss.n>1?' avis':' avis')+'</span>':'<span>Pas encore d’avis</span>')+'</div>';
- if(mine){
-  h+='<div class="btns"><button type="button" class="btn sm" data-a="edit" data-id="'+id+'">Modifier</button><button type="button" class="btn ghost sm" data-a="sold" data-id="'+id+'">'+(it.sold?'Remettre en vente':'Marquer comme vendu')+'</button><button type="button" class="btn '+(st.confirmDel===id?'danger':'ghost')+' sm" data-a="del" data-id="'+id+'">'+(st.confirmDel===id?'Confirmer la suppression':'Supprimer')+'</button></div>';
- }else{
-  h+='<div class="btns"><button type="button" class="btn ghost sm" data-a="fav" data-id="'+id+'" aria-pressed="'+(isFav(id)?'true':'false')+'">'+(isFav(id)?'Retirer des favoris':'Ajouter aux favoris')+'</button><a class="btn ghost sm" target="_blank" rel="noopener" href="https://wa.me/?text='+encodeURIComponent(it.t+' · '+fmt(it.price)+' sur Locachat')+'">Partager sur WhatsApp</a></div>';
-  if(!user){h+='<div class="panel"><h3>Messagerie</h3><p class="note">Connectez-vous pour écrire au vendeur. Il saura ainsi qui lui écrit, et vous aussi.</p><div class="btns"><button type="button" class="btn sm" data-a="login">Se connecter</button><button type="button" class="btn ghost sm" data-a="signup">Créer un compte</button></div></div>'}else
-  h+='<div class="panel"><h3>Messagerie</h3><div class="chat">'+chat.map(function(m){return '<div class="msg">'+esc(m)+'</div>'}).join('')+'</div><form class="send" data-f="send"><input id="msg" type="text" placeholder="Bonjour, est-ce toujours disponible ?" aria-label="Votre message"><button class="btn sm" type="submit">Envoyer</button></form><p class="note" style="margin-top:8px">Aperçu : les messages ne sont pas encore envoyés dans ce prototype.</p></div>';
-  h+='<div class="panel safe"><h3>Payez en main propre</h3><p>Retrouvez le vendeur dans un lieu public, vérifiez l’article, puis payez en espèces ou par mobile money. Ne versez jamais d’argent à l’avance.</p></div>';
-  h+='<div class="panel"><h3>Avis sur le vendeur</h3>'+ss.list.slice(-3).reverse().map(function(r){return '<div class="rv"><span class="stars">'+stars(r.rating)+'</span> <b>'+esc(r.byName)+'</b>'+(r.text?'<br>'+esc(r.text):'')+'</div>'}).join('')+
-   '<form class="f" data-f="review" style="margin-top:10px"><div class="two"><label for="r-s">Note<select id="r-s"><option value="5">5 sur 5</option><option value="4">4 sur 5</option><option value="3">3 sur 5</option><option value="2">2 sur 5</option><option value="1">1 sur 5</option></select></label><label for="r-t">Commentaire<input id="r-t" maxlength="200" placeholder="Facultatif"></label></div><button class="btn ghost sm" type="submit" style="justify-self:start">Laisser un avis</button></form></div>';
-  h+='<div class="panel"><h3>Signaler cette annonce</h3><form class="send" data-f="report"><select id="rp-r" aria-label="Motif" style="flex:1;min-width:0;border:1.5px solid var(--line);background:var(--bg);border-radius:999px;padding:9px 14px">'+REASONS.map(function(r){return '<option>'+r+'</option>'}).join('')+'</select><button class="btn ghost sm" type="submit">Signaler</button></form></div>';
- }
- openOv(h);
+/* ---------- En-tête ---------- */
+function renderAcct() {
+  const first = st.profile ? shortName(st.profile.display_name).split(' ')[0] : 'Mon compte';
+  $('#acct').innerHTML = st.user
+    ? `<button type="button" class="btn ghost sm" data-a="inbox">Messages${st.unread ? ` <span class="dot">${st.unread > 9 ? '9+' : st.unread}</span>` : ''}</button>
+       <button type="button" class="btn ghost sm" data-a="account">${esc(first)}</button>
+       <button type="button" class="btn ghost sm" data-a="logout">Déconnexion</button>
+       <button type="button" class="btn" data-a="publish">Déposer une annonce</button>`
+    : `<button type="button" class="btn ghost" data-a="login">Se connecter</button>
+       <button type="button" class="btn" data-a="publish">Déposer une annonce</button>`;
 }
 
-function thumbsHtml(){
- return st.photos.map(function(s,i){return '<div><img src="'+esc(s)+'" alt="Photo '+(i+1)+'"><button type="button" data-a="rmphoto" data-i="'+i+'" aria-label="Retirer la photo '+(i+1)+'">×</button></div>'}).join('');
+/* ---------- Liste des annonces ---------- */
+function cardHtml(l) {
+  const img = l.thumbs[0] ? `<img src="${esc(l.thumbs[0])}" alt="${esc(l.t)}" loading="lazy" decoding="async">` : art(l.cat);
+  const badge = l.sold ? '<span class="badge sold">Vendu</span>' : (l.type === 'location' ? '<span class="badge">Location</span>' : '');
+  return `<article class="card${l.sold ? ' sold' : ''}"><button type="button" class="cardbtn" data-a="open" data-id="${esc(l.id)}"><div class="tile">${img}${badge}</div><div class="cbody"><h3>${esc(l.t)}</h3>${priceHtml(l)}<div class="meta"><span>${esc(l.city)}</span><span>${ago(l.ts)}</span></div><div class="meta"><span>${esc(shortName(l.seller))}</span></div></div></button></article>`;
 }
-function showPublish(editId){
- if(!user){needLogin('publish');return}
- var ed=editId?find(editId):null;
- st.editId=ed?ed.id:null;
- st.photos=ed&&ed.imgs?ed.imgs.slice():[];
- var v=function(x){return ed?esc(ed[x]):''};
- var h='<h2>'+(ed?'Modifier l’annonce':'Déposer une annonce')+'</h2><p class="note" style="margin-top:6px">Gratuit pendant le lancement.</p>'+
- '<form class="f" data-f="pub">'+
- '<div><label class="drop" for="f-img"><b>Ajouter des photos</b><span>Jusqu’à '+MAX_PHOTOS+' photos. Elles sont réduites automatiquement.</span><input id="f-img" type="file" accept="image/*" multiple></label><div class="pthumbs" id="pth" style="margin-top:10px">'+thumbsHtml()+'</div></div>'+
- '<label for="f-t">Titre<input id="f-t" required maxlength="80" placeholder="Ex. Télévision LG 43 pouces" value="'+v('t')+'"></label>'+
- '<div class="two"><label for="f-c">Catégorie<select id="f-c">'+CATS.map(function(c){return '<option value="'+c[0]+'"'+(ed&&ed.cat===c[0]?' selected':'')+'>'+c[1]+'</option>'}).join('')+'</select></label>'+
- '<label for="f-ty">Type<select id="f-ty"><option value="vente"'+(ed&&ed.type==='vente'?' selected':'')+'>Vente</option><option value="location"'+(ed&&ed.type==='location'?' selected':'')+'>Location</option></select></label></div>'+
- '<div class="two"><label for="f-v">Ville<select id="f-v">'+CITIES.map(function(c){return '<option'+((ed?ed.city:user.city)===c?' selected':'')+'>'+c+'</option>'}).join('')+'</select></label>'+
- '<label for="f-p">Prix (FCFA)<input id="f-p" type="number" min="0" step="500" required inputmode="numeric" placeholder="25000" value="'+(ed?ed.price:'')+'"></label></div>'+
- '<label for="f-d">Description<textarea id="f-d" required maxlength="500" placeholder="État, accessoires, lieu de remise…">'+v('desc')+'</textarea></label>'+
- '<p class="err" id="pub-err" role="alert" hidden></p>'+
- '<button class="btn" type="submit">'+(ed?'Enregistrer les modifications':'Publier l’annonce')+'</button></form>';
- openOv(h);
+function renderGrid() {
+  const noFilter = !st.q.trim() && !st.city && !st.cat && !st.type;
+  $('#count').textContent = st.loading && !st.items.length ? '' : st.total + (st.total > 1 ? ' annonces' : ' annonce');
+  let h;
+  if (st.err && !st.items.length) h = `<div class="empty"><h3>Chargement impossible</h3><p>${esc(st.err)}</p><button type="button" class="btn" data-a="retry">Réessayer</button></div>`;
+  else if (st.loading && !st.items.length) h = '<p class="loading">Chargement des annonces…</p>';
+  else if (st.items.length) h = st.items.map(cardHtml).join('');
+  else if (noFilter) h = '<div class="empty"><h3>Aucune annonce pour le moment</h3><p>Locachat vient d’ouvrir. Soyez le premier à publier un article ou un service, avec des photos.</p><button type="button" class="btn" data-a="publish">Déposer la première annonce</button></div>';
+  else h = '<div class="empty"><h3>Aucun résultat</h3><p>Essayez une autre ville ou retirez un filtre.</p></div>';
+  $('#grid').innerHTML = h;
+  $('#more').innerHTML = st.items.length && st.items.length < st.total
+    ? `<button type="button" class="btn ghost" data-a="more"${st.loading ? ' disabled' : ''}>${st.loading ? 'Chargement…' : 'Voir plus d’annonces'}</button>`
+    : (st.err && st.items.length ? '<button type="button" class="btn ghost" data-a="more">Réessayer</button>' : '');
 }
-
-/* connexion et inscription */
-function showAuth(mode,err){
- st.auth={mode:mode};
- var login=mode==='login';
- openOv('<h2>'+(login?'Se connecter':'Créer un compte')+'</h2><p class="note" style="margin-top:6px">'+(login?'Entrez le numéro de votre compte pour retrouver vos annonces.':'Pour publier des annonces et contacter les vendeurs.')+'</p>'+
- '<form class="f" data-f="'+(login?'li1':'su1')+'">'+
- (login?'':'<label for="s-n">Nom complet<input id="s-n" required maxlength="60" autocomplete="name" placeholder="Ex. Aïcha Moukala"></label>')+
- '<label for="s-p">Numéro de téléphone<input id="s-p" type="tel" required inputmode="tel" autocomplete="tel" placeholder="Ex. 06 123 45 67"></label>'+
- (login?'':'<label for="s-c">Ville<select id="s-c">'+CITIES.map(function(c){return '<option>'+c+'</option>'}).join('')+'</select></label><label class="chk" for="s-t"><input id="s-t" type="checkbox" required><span>J’accepte les <button type="button" class="linkbtn" data-a="legal" data-k="cgu">conditions d’utilisation</button> et la <button type="button" class="linkbtn" data-a="legal" data-k="priv">politique de confidentialité</button>.</span></label>')+
- '<p class="err" id="su-err" role="alert"'+(err?'':' hidden')+'>'+(err?esc(err):'')+'</p>'+
- '<button class="btn" type="submit">Recevoir mon code</button></form>'+
- '<p class="note" style="margin-top:14px">'+(login?'Pas encore de compte ? <button type="button" class="linkbtn" data-a="signup">Créer un compte</button>':'Déjà inscrit ? <button type="button" class="linkbtn" data-a="login">Se connecter</button>')+'</p>');
+function renderChips() {
+  let h = `<button type="button" class="chip" data-a="cat" data-c="" aria-pressed="${st.cat === ''}">Tout</button>`;
+  CATS.forEach(c => { h += `<button type="button" class="chip" data-a="cat" data-c="${c[0]}" aria-pressed="${st.cat === c[0]}">${c[1]}</button>`; });
+  SOON.forEach(s => { h += `<span class="chip soon">${s}<small>Bientôt</small></span>`; });
+  $('#chips').innerHTML = h;
 }
-function showCode(){
- openOv('<h2>Vérifiez votre numéro</h2><p style="margin-top:8px;color:var(--muted)">Un code à 4 chiffres est envoyé par SMS au '+esc(st.auth.phone)+'.</p>'+
- '<div class="panel safe"><p>Simulation : dans la vraie version le code arrive par SMS. Ici, saisissez <b>1234</b>.</p></div>'+
- '<form class="f" data-f="code"><label for="s-k">Code de vérification<input id="s-k" required inputmode="numeric" maxlength="4" autocomplete="one-time-code" placeholder="0000"></label>'+
- '<p class="err" id="su-err" role="alert" hidden></p>'+
- '<button class="btn" type="submit">Valider</button></form>');
+// Charge les annonces depuis Supabase (20 par 20)
+async function loadListings(reset) {
+  if (!reset && st.loading) return;
+  const tok = ++st.tok;
+  if (reset) { st.items = []; st.total = 0; st.page = 0; }
+  st.loading = true; st.err = null;
+  renderGrid();
+  try {
+    const { rows, total } = await api.fetchListings({ q: st.q, city: st.city, cat: st.cat, type: st.type, sort: st.sort, page: st.page });
+    if (tok !== st.tok) return; // une recherche plus récente a pris la place
+    st.items = st.items.concat(rows); st.total = total; st.page++;
+  } catch (e) {
+    if (tok !== st.tok) return;
+    st.err = api.friendlyError(e);
+  }
+  st.loading = false;
+  renderGrid();
 }
-
-/* compte */
-function showAccount(tab){
- if(!user)return;
- st.open=null;
- st.tab=tab||st.tab||'mine';
- var t=st.tab;
- var tabs=[['mine','Mes annonces'],['favs','Favoris'],['settings','Paramètres'],['help','Aide et avis']];
- var h='<h2>'+esc(user.name)+'</h2><p class="note" style="margin-top:6px">'+esc(user.city)+' · '+esc(user.phone)+'</p>'+
- '<div class="tabs" role="group" aria-label="Sections du compte">'+tabs.map(function(x){return '<button type="button" data-a="tab" data-t="'+x[0]+'" aria-pressed="'+(t===x[0]?'true':'false')+'">'+x[1]+'</button>'}).join('')+'</div>';
- if(t==='mine'){
-  var mine=items.filter(function(i){return i.owner===user.id});
-  h+=mine.length?'<div class="list">'+mine.map(function(i){return '<div><span class="t">'+esc(i.t)+(i.sold?' · Vendu':'')+'</span><span class="note">'+fmt(i.price)+' · '+esc(i.city)+' · '+ago(i.ts)+'</span><span class="a"><button type="button" class="btn ghost sm" data-a="open" data-id="'+i.id+'">Voir</button><button type="button" class="btn ghost sm" data-a="edit" data-id="'+i.id+'">Modifier</button><button type="button" class="btn ghost sm" data-a="sold" data-id="'+i.id+'">'+(i.sold?'Remettre en vente':'Vendu')+'</button><button type="button" class="btn '+(st.confirmDel===i.id?'danger':'ghost')+' sm" data-a="del" data-id="'+i.id+'">'+(st.confirmDel===i.id?'Confirmer':'Supprimer')+'</button></span></div>'}).join('')+'</div>':'<div class="panel"><p class="note">Vous n’avez pas encore d’annonce.</p></div>';
-  h+='<div class="btns"><button type="button" class="btn" data-a="publish">Déposer une annonce</button></div>';
- }else if(t==='favs'){
-  var fl=myFavs().map(find).filter(Boolean);
-  h+=fl.length?'<div class="list">'+fl.map(function(i){return '<div><span class="t">'+esc(i.t)+'</span><span class="note">'+fmt(i.price)+' · '+esc(i.city)+'</span><span class="a"><button type="button" class="btn ghost sm" data-a="open" data-id="'+i.id+'">Voir</button><button type="button" class="btn ghost sm" data-a="fav" data-id="'+i.id+'">Retirer</button></span></div>'}).join('')+'</div>':'<div class="panel"><p class="note">Touchez le cœur sur une annonce pour la retrouver ici.</p></div>';
- }else if(t==='settings'){
-  var th=load('lc_theme','auto');var nt=user.notif||{sms:true,wa:false,msg:true};
-  h+='<form class="f" data-f="settings"><label for="p-n">Nom complet<input id="p-n" required maxlength="60" value="'+esc(user.name)+'"></label>'+
-  '<div class="two"><label for="p-c">Ville<select id="p-c">'+CITIES.map(function(c){return '<option'+(user.city===c?' selected':'')+'>'+c+'</option>'}).join('')+'</select></label>'+
-  '<label for="p-p">Téléphone<input id="p-p" readonly value="'+esc(user.phone)+'"></label></div>'+
-  '<p class="note">Changer de numéro demandera un nouveau code SMS (bientôt).</p>'+
-  '<div class="panel" style="margin-top:0"><h3>Notifications</h3>'+
-  '<label class="tog" for="n-m"><span>Nouveaux messages</span><input id="n-m" type="checkbox"'+(nt.msg?' checked':'')+'></label>'+
-  '<label class="tog" for="n-s"><span>Alertes par SMS</span><input id="n-s" type="checkbox"'+(nt.sms?' checked':'')+'></label>'+
-  '<label class="tog" for="n-w"><span>Alertes par WhatsApp</span><input id="n-w" type="checkbox"'+(nt.wa?' checked':'')+'></label></div>'+
-  '<div class="panel" style="margin-top:0"><h3>Apparence</h3><div class="opts" role="radiogroup" aria-label="Thème">'+[['auto','Automatique'],['light','Clair'],['dark','Sombre']].map(function(x){return '<label><input type="radio" name="theme" value="'+x[0]+'"'+(th===x[0]?' checked':'')+'> '+x[1]+'</label>'}).join('')+'</div></div>'+
-  '<button class="btn" type="submit" style="justify-self:start">Enregistrer</button></form>'+
-  '<div class="panel dng"><h3>Supprimer mon compte</h3><p class="note">Votre compte, vos annonces, vos photos et vos favoris seront effacés définitivement.</p>'+
-  (st.delAcc?'<form class="f" data-f="delacc"><label for="d-c">Tapez SUPPRIMER pour confirmer<input id="d-c" autocomplete="off"></label><p class="err" id="d-err" role="alert" hidden></p><button class="btn danger sm" type="submit" style="justify-self:start">Supprimer définitivement</button></form>':'<div class="btns"><button type="button" class="btn ghost sm" data-a="delacc">Supprimer mon compte</button></div>')+'</div>'+
-  '<div class="btns"><button type="button" class="btn ghost sm" data-a="logout">Se déconnecter</button></div>';
- }else{
-  h+=helpHtml()+'<div class="btns"><button type="button" class="btn ghost sm" data-a="logout">Se déconnecter</button></div>';
- }
- openOv(h);
-}
-function helpHtml(){
- return '<div class="panel"><h3>Donner votre avis</h3><form class="f" data-f="feedback" style="margin-top:0"><div class="two"><label for="fb-t">Sujet<select id="fb-t"><option>Idée d’amélioration</option><option>Problème rencontré</option><option>Question</option><option>Autre</option></select></label><label for="fb-r">Satisfaction<select id="fb-r"><option value="5">5 sur 5</option><option value="4">4 sur 5</option><option value="3">3 sur 5</option><option value="2">2 sur 5</option><option value="1">1 sur 5</option></select></label></div><label for="fb-m">Votre message<textarea id="fb-m" required maxlength="600" placeholder="Dites-nous ce qui manque ou ce qui ne marche pas"></textarea></label><button class="btn sm" type="submit" style="justify-self:start">Envoyer mon avis</button></form></div>'+
- '<div class="panel"><h3>Questions fréquentes</h3>'+
- '<details><summary>Comment publier une annonce ?</summary><p>Connectez-vous, touchez « Déposer une annonce », ajoutez des photos, un titre, un prix et une description.</p></details>'+
- '<details><summary>Comment éviter les arnaques ?</summary><p>Rencontrez le vendeur dans un lieu public, vérifiez l’article avant de payer et ne versez jamais d’argent à l’avance. Signalez toute annonce suspecte.</p></details>'+
- '<details><summary>Puis-je modifier ou supprimer mon annonce ?</summary><p>Oui, depuis « Mes annonces » ou depuis la fiche de l’annonce. Vous pouvez aussi la marquer comme vendue.</p></details>'+
- '<details><summary>Comment supprimer mon compte ?</summary><p>Ouvrez « Paramètres », puis « Supprimer mon compte ». Vos données sont effacées.</p></details>'+
- '<details><summary>Combien coûte Locachat ?</summary><p>Le service est gratuit pendant le lancement.</p></details></div>'+
- '<div class="panel"><h3>Informations légales</h3><div class="btns" style="margin-top:0"><button type="button" class="btn ghost sm" data-a="legal" data-k="cgu">Conditions d’utilisation</button><button type="button" class="btn ghost sm" data-a="legal" data-k="priv">Confidentialité</button></div><p class="note" style="margin-top:8px">Contact du support : à définir.</p></div>';
-}
-function showLegal(k){
- var cgu=k==='cgu';
- openOv('<h2>'+(cgu?'Conditions d’utilisation':'Confidentialité')+'</h2><div class="panel safe"><p>Texte provisoire de la maquette. À faire rédiger et valider par un juriste avant le lancement.</p></div>'+
- '<div class="panel">'+(cgu
-  ?'<p>Ce que le texte final devra couvrir :</p><ul style="margin:8px 0 0;padding-left:18px;color:var(--muted)"><li>Rôle de Locachat : mise en relation, sans être partie à la vente</li><li>Articles et services interdits</li><li>Responsabilité des utilisateurs et des annonces</li><li>Modération, suspension de compte et signalements</li><li>Gratuité du lancement et évolution des tarifs</li></ul>'
-  :'<p>Ce que le texte final devra couvrir :</p><ul style="margin:8px 0 0;padding-left:18px;color:var(--muted)"><li>Données collectées : nom, numéro de téléphone, ville, annonces, photos</li><li>Finalités : compte, vérification du numéro, mise en relation, modération</li><li>Durée de conservation et suppression du compte</li><li>Droits d’accès, de rectification et de suppression</li><li>Prestataires utilisés (hébergement, SMS)</li></ul>')+'</div>'+
- '<div class="btns"><button type="button" class="btn ghost sm" data-a="close">Fermer</button></div>');
+async function getListing(id) {
+  return st.items.find(x => x.id === id) || st.mine.find(x => x.id === id) || await api.fetchListing(id);
 }
 
-/* photos */
-function shrink(file){
- return new Promise(function(res,rej){
-  var r=new FileReader();r.onerror=rej;
-  r.onload=function(){
-   var im=new Image();im.onerror=rej;
-   im.onload=function(){
-    var s=Math.min(1,900/Math.max(im.width,im.height));
-    var c=document.createElement('canvas');c.width=Math.round(im.width*s);c.height=Math.round(im.height*s);
-    c.getContext('2d').drawImage(im,0,0,c.width,c.height);
-    res(c.toDataURL('image/jpeg',.75));
-   };
-   im.src=r.result;
+/* ---------- Fiche d'une annonce ---------- */
+function showListing(l, keepIdx) {
+  st.listing = l;
+  if (!keepIdx) st.imgIdx = 0;
+  const mine = st.user && l.owner === st.user.id;
+  const big = l.imgs[st.imgIdx] ? `<img src="${esc(l.imgs[st.imgIdx])}" alt="${esc(l.t)}">` : art(l.cat);
+  let h = `<h2>${esc(l.t)}${l.sold ? ' <span class="tag" style="background:var(--red);color:#fff;vertical-align:middle">Vendu</span>' : ''}</h2><div class="dtile"><div class="tile">${big}</div></div>`;
+  if (l.imgs.length > 1) h += `<div class="thumbs">${l.thumbs.map((s, i) => `<button type="button" data-a="img" data-i="${i}" aria-pressed="${i === st.imgIdx}" aria-label="Photo ${i + 1}"><img src="${esc(s)}" alt=""></button>`).join('')}</div>`;
+  h += `<div class="row" style="margin-bottom:6px">${priceHtml(l)}<span>${esc(l.city)}</span><span>${ago(l.ts)}</span><span class="tag">${esc(catLabel(l.cat))}</span>${l.type === 'location' ? '<span class="tag">Location</span>' : ''}</div>`;
+  h += `<p style="margin:10px 0;overflow-wrap:anywhere">${esc(l.desc)}</p>`;
+  h += `<div class="row"><span>Vendeur : <b style="color:var(--fg)">${esc(shortName(l.seller))}</b></span></div>`;
+  if (mine) {
+    h += `<div class="btns"><button type="button" class="btn sm" data-a="edit" data-id="${esc(l.id)}">Modifier</button><button type="button" class="btn ghost sm" data-a="sold" data-id="${esc(l.id)}">${l.sold ? 'Remettre en vente' : 'Marquer comme vendu'}</button><button type="button" class="btn ${st.confirmDel === l.id ? 'danger' : 'ghost'} sm" data-a="del" data-id="${esc(l.id)}">${st.confirmDel === l.id ? 'Confirmer la suppression' : 'Supprimer'}</button></div>`;
+  } else {
+    h += `<div class="btns"><button type="button" class="btn" data-a="contact" data-id="${esc(l.id)}">Écrire au vendeur</button><a class="btn ghost sm" target="_blank" rel="noopener" href="https://wa.me/?text=${encodeURIComponent(l.t + ' · ' + fmt(l.price) + ' sur Locachat')}">Partager sur WhatsApp</a></div>`;
+    h += '<div class="panel safe"><h3>Payez en main propre</h3><p>Retrouvez le vendeur dans un lieu public, vérifiez l’article, puis payez en espèces ou par mobile money. Ne versez jamais d’argent à l’avance.</p></div>';
+    h += `<div class="panel"><h3>Signaler cette annonce</h3><form class="send" data-f="report"><select id="rp-r" aria-label="Motif" style="flex:1;min-width:0;border:1.5px solid var(--line);background:var(--bg);border-radius:999px;padding:9px 14px">${REASONS.map(r => `<option>${r}</option>`).join('')}</select><button class="btn ghost sm" type="submit">Signaler</button></form></div>`;
+  }
+  openOv(h, 'listing');
+  st.listing = l;
+}
+async function openListing(id) {
+  const l = await getListing(id);
+  if (l) showListing(l); else toast('Cette annonce n’existe plus.');
+}
+async function toggleSold(id) {
+  const l = (st.listing && st.listing.id === id) ? st.listing : st.mine.find(x => x.id === id);
+  if (!l) return;
+  await api.setSold(id, !l.sold);
+  toast(l.sold ? 'Remise en vente' : 'Marquée comme vendue');
+  loadListings(true);
+  if (st.ov === 'listing') { const nl = await api.fetchListing(id); if (nl) showListing(nl, true); } else if (st.ov === 'account') showAccount('mine');
+}
+async function removeListing(id) {
+  if (st.confirmDel !== id) {
+    st.confirmDel = id;
+    if (st.ov === 'listing' && st.listing) showListing(st.listing, true); else showAccount('mine', false);
+    return;
+  }
+  const l = (st.listing && st.listing.id === id) ? st.listing : st.mine.find(x => x.id === id);
+  await api.deleteListing(id, l ? l.photos : []);
+  st.confirmDel = null;
+  toast('Annonce supprimée');
+  loadListings(true);
+  if (st.ov === 'listing') closeOv(); else showAccount('mine');
+}
+
+/* ---------- Publier / modifier une annonce ---------- */
+function renderPhotoThumbs() {
+  const box = $('#pth');
+  if (!box || !st.form) return;
+  box.innerHTML = st.form.photos.map((p, i) => `<div><img src="${esc(p.preview)}" alt="Photo ${i + 1}"><button type="button" data-a="rmphoto" data-i="${i}" aria-label="Retirer la photo ${i + 1}">×</button></div>`).join('');
+}
+function showPublish(edit) {
+  if (!st.user) { needLogin({ k: 'publish' }); return; }
+  const e = edit || null;
+  const v = x => (e ? esc(e[x]) : '');
+  const defaultCity = e ? e.city : ((st.profile && st.profile.city) || '');
+  openOv(`<h2>${e ? 'Modifier l’annonce' : 'Déposer une annonce'}</h2><p class="note" style="margin-top:6px">Gratuit pendant le lancement.</p>
+  <form class="f" data-f="pub">
+   <div><label class="drop" for="f-img"><b>Ajouter des photos</b><span>Jusqu’à ${MAX_PHOTOS} photos. Elles sont réduites automatiquement.</span><input id="f-img" type="file" accept="image/jpeg,image/png,image/webp" multiple></label><div class="pthumbs" id="pth" style="margin-top:10px"></div></div>
+   <label for="f-t">Titre<input id="f-t" required minlength="3" maxlength="80" placeholder="Ex. Télévision LG 43 pouces" value="${v('t')}"></label>
+   <div class="two"><label for="f-c">Catégorie<select id="f-c">${CATS.map(c => `<option value="${c[0]}"${e && e.cat === c[0] ? ' selected' : ''}>${c[1]}</option>`).join('')}</select></label>
+   <label for="f-ty">Type<select id="f-ty"><option value="vente"${e && e.type === 'vente' ? ' selected' : ''}>Vente</option><option value="location"${e && e.type === 'location' ? ' selected' : ''}>Location (prix par jour)</option></select></label></div>
+   <div class="two"><label for="f-v">Ville<select id="f-v">${CITIES.map(c => `<option${defaultCity === c ? ' selected' : ''}>${c}</option>`).join('')}</select></label>
+   <label for="f-p">Prix (FCFA)<input id="f-p" type="number" min="0" max="1000000000" step="500" required inputmode="numeric" placeholder="25000" value="${e ? e.price : ''}"></label></div>
+   <label for="f-d">Description<textarea id="f-d" required maxlength="500" placeholder="État, accessoires, lieu de remise…">${v('desc')}</textarea></label>
+   <p class="err" id="pub-err" role="alert" hidden></p>
+   <button class="btn" type="submit">${e ? 'Enregistrer les modifications' : 'Publier l’annonce'}</button>
+  </form>`, 'publish');
+  st.form = { edit: e, removed: [], photos: e ? e.photos.map(p => ({ id: p.id, path: p.path, position: p.position, preview: p.thumb })) : [] };
+  renderPhotoThumbs();
+}
+async function addFormPhotos(files) {
+  if (!st.form) return;
+  const list = Array.from(files).slice(0, MAX_PHOTOS - st.form.photos.length);
+  if (!list.length) { if (files.length) toast(MAX_PHOTOS + ' photos au maximum'); return; }
+  for (const f of list) {
+    try {
+      const p = await prepareImage(f);
+      if (!st.form) return;
+      st.form.photos.push(p);
+      renderPhotoThumbs();
+    } catch (e) { toast(e.message || 'Cette photo n’a pas pu être lue.'); }
+  }
+}
+async function submitListing(form) {
+  const pubErr = m => { const el = $('#pub-err'); el.textContent = m; el.hidden = false; };
+  const f = { t: $('#f-t').value.trim(), cat: $('#f-c').value, type: $('#f-ty').value, city: $('#f-v').value, price: Math.round(Number($('#f-p').value)), desc: $('#f-d').value.trim() };
+  if (f.t.length < 3) return pubErr('Le titre doit avoir au moins 3 caractères.');
+  if (!Number.isFinite(f.price) || f.price < 0 || f.price > 1000000000) return pubErr('Prix invalide.');
+  if (!f.desc) return pubErr('Ajoutez une description.');
+  const btn = form.querySelector('[type=submit]');
+  btn.disabled = true; btn.textContent = 'Envoi en cours…';
+  try {
+    const fresh = st.form.photos.filter(p => !p.id);
+    if (st.form.edit) {
+      const keep = st.form.photos.filter(p => p.id);
+      const start = keep.reduce((m, p) => Math.max(m, p.position), -1) + 1;
+      await api.updateListing(st.user.id, st.form.edit.id, f, st.form.removed, fresh, start);
+    } else {
+      await api.createListing(st.user.id, f, fresh);
+    }
+    const wasEdit = !!st.form.edit;
+    closeOv();
+    st.q = ''; st.cat = ''; st.city = ''; st.type = ''; $('#q').value = ''; $('#city').value = ''; $('#type').value = '';
+    renderChips();
+    loadListings(true);
+    toast(wasEdit ? 'Annonce modifiée' : 'Annonce publiée');
+  } catch (e) {
+    pubErr(api.friendlyError(e));
+    btn.disabled = false; btn.textContent = st.form && st.form.edit ? 'Enregistrer les modifications' : 'Publier l’annonce';
+  }
+}
+
+/* ---------- Connexion, inscription ---------- */
+function needLogin(after) { st.after = after || null; showAuth('login'); }
+function authErr(m) { const el = $('#a-err'); if (el) { el.textContent = m; el.hidden = false; } }
+function showAuth(mode, msg) {
+  const err = `<p class="err" id="a-err" role="alert"${mode === 'checkmail' ? ' hidden' : (msg ? '' : ' hidden')}>${mode === 'checkmail' ? '' : esc(msg || '')}</p>`;
+  const emailField = '<label for="a-e">Email<input id="a-e" type="email" required autocomplete="email" inputmode="email" maxlength="120"></label>';
+  let h = '';
+  if (mode === 'login') {
+    h = `<h2>Se connecter</h2>
+    <div style="margin-top:14px"><button type="button" class="btn ghost block" data-a="google">Continuer avec Google</button></div>
+    <div class="sep" style="margin-top:12px">ou avec votre email</div>
+    <form class="f" data-f="login" style="margin-top:8px">${emailField}
+     <label for="a-p">Mot de passe<input id="a-p" type="password" required autocomplete="current-password"></label>${err}
+     <button class="btn" type="submit">Se connecter</button></form>
+    <p class="note" style="margin-top:12px"><button type="button" class="linkbtn" data-a="forgot">Mot de passe oublié ?</button></p>
+    <p class="note" style="margin-top:8px">Pas encore de compte ? <button type="button" class="linkbtn" data-a="signup">Créer un compte</button></p>`;
+  } else if (mode === 'signup') {
+    h = `<h2>Créer un compte</h2><p class="note" style="margin-top:6px">Pour publier des annonces et écrire aux vendeurs.</p>
+    <div style="margin-top:14px"><button type="button" class="btn ghost block" data-a="google">Continuer avec Google</button></div>
+    <div class="sep" style="margin-top:12px">ou avec votre email</div>
+    <form class="f" data-f="signup" style="margin-top:8px">
+     <label for="a-n">Nom complet<input id="a-n" required maxlength="60" autocomplete="name" placeholder="Ex. Aïcha Moukala"></label>
+     <label for="a-c">Ville<select id="a-c">${CITIES.map(c => `<option>${c}</option>`).join('')}</select></label>${emailField}
+     <label for="a-p">Mot de passe (8 caractères minimum)<input id="a-p" type="password" required minlength="8" autocomplete="new-password"></label>
+     <label class="chk" for="a-t"><input id="a-t" type="checkbox" required><span>J’accepte les <button type="button" class="linkbtn" data-a="legal" data-k="cgu">conditions d’utilisation</button> et la <button type="button" class="linkbtn" data-a="legal" data-k="priv">politique de confidentialité</button>.</span></label>${err}
+     <button class="btn" type="submit">Créer mon compte</button></form>
+    <p class="note" style="margin-top:12px">Déjà inscrit ? <button type="button" class="linkbtn" data-a="login">Se connecter</button></p>`;
+  } else if (mode === 'forgot') {
+    h = `<h2>Mot de passe oublié</h2><p class="note" style="margin-top:6px">Entrez votre email, nous vous envoyons un lien pour choisir un nouveau mot de passe.</p>
+    <form class="f" data-f="forgot">${emailField}${err}<button class="btn" type="submit">Envoyer le lien</button></form>
+    <p class="note" style="margin-top:12px"><button type="button" class="linkbtn" data-a="login">Retour à la connexion</button></p>`;
+  } else if (mode === 'checkmail') {
+    h = `<h2>Vérifiez votre email</h2><p style="margin-top:10px">Nous avons envoyé un lien de confirmation à <b>${esc(msg)}</b>. Ouvrez-le, puis revenez vous connecter.</p><p class="note" style="margin-top:10px">Rien reçu ? Regardez dans les courriers indésirables.</p>
+    <div class="btns"><button type="button" class="btn" data-a="login">Se connecter</button></div>`;
+  } else if (mode === 'sentreset') {
+    h = `<h2>Lien envoyé</h2><p style="margin-top:10px">Si un compte existe pour <b>${esc(msg)}</b>, un email vient de partir. Ouvrez le lien qu’il contient.</p><div class="btns"><button type="button" class="btn ghost" data-a="close">Fermer</button></div>`;
+  } else if (mode === 'newpw') {
+    h = `<h2>Nouveau mot de passe</h2><form class="f" data-f="newpw"><label for="a-p">Nouveau mot de passe (8 caractères minimum)<input id="a-p" type="password" required minlength="8" autocomplete="new-password"></label>${err}<button class="btn" type="submit">Enregistrer</button></form>`;
+  }
+  openOv(h, 'auth');
+}
+
+// Appelé à chaque changement de connexion (ouverture du site, connexion, déconnexion)
+async function applySession(session) {
+  if (session && session.user) {
+    const same = st.user && st.user.id === session.user.id;
+    st.user = session.user;
+    if (same) return;
+    try { st.profile = await api.getProfile(session.user.id); } catch (e) { st.profile = null; }
+    renderAcct();
+    startRealtime();
+    refreshUnread();
+    if (st.ov === 'auth') closeOv();
+    const a = st.after; st.after = null;
+    if (a) await runAfter(a).catch(fail);
+  } else if (st.user) {
+    st.user = null; st.profile = null; st.unread = 0; st.mine = [];
+    stopRealtime();
+    renderAcct();
+  }
+}
+// Ce qu'on faisait avant d'être obligé de se connecter
+async function runAfter(a) {
+  if (a.k === 'publish') showPublish();
+  else if (a.k === 'contact') { const l = await getListing(a.id); if (l) await contact(l); }
+}
+
+/* ---------- Messagerie ---------- */
+let unsub = null;
+function startRealtime() { stopRealtime(); unsub = api.subscribeMessages(onNewMessage); }
+function stopRealtime() { if (unsub) { unsub(); unsub = null; } }
+async function refreshUnread() {
+  if (!st.user) return;
+  try { st.unread = await api.unreadCount(st.user.id); renderAcct(); } catch (e) { /* pas grave */ }
+}
+function onNewMessage(m) {
+  if (!st.user || m.sender_id === st.user.id) return;
+  if (st.ov === 'conv' && st.conv && st.conv.id === m.conversation_id) {
+    if (!st.conv.messages.some(x => x.id === m.id)) { st.conv.messages.push(m); renderChat(); }
+    api.markRead(m.conversation_id).then(refreshUnread).catch(() => {});
+  } else {
+    refreshUnread();
+    toast('Nouveau message');
+    if (st.ov === 'inbox') showInbox();
+  }
+}
+function renderChat() {
+  const box = $('#chat');
+  if (!box || !st.conv) return;
+  const me = st.user.id;
+  box.innerHTML = st.conv.messages.length
+    ? st.conv.messages.map(m => {
+        const mine = m.sender_id === me;
+        return `<div class="msg${mine ? '' : ' in'}"><span class="who">${mine ? 'Vous' : esc(shortName(st.conv.otherName))}</span>${esc(m.body)}<span class="when">${timeOf(m.created_at)}</span></div>`;
+      }).join('')
+    : '<p class="note">Écrivez votre premier message.</p>';
+  box.scrollTop = box.scrollHeight;
+}
+async function showConversation(cid, meta) {
+  const tok = openOv('<p class="loading">Chargement…</p>', 'conv');
+  try {
+    const messages = await api.fetchMessages(cid);
+    if (tok !== st.ovTok) return;
+    openOv(`<h2>${esc(shortName(meta.otherName))}</h2>
+      <p class="note" style="margin-top:6px">À propos de : <button type="button" class="linkbtn" data-a="openlisting" data-id="${esc(meta.listingId)}">${esc(meta.title)}</button></p>
+      <div class="panel"><div class="chat big" id="chat" aria-live="polite"></div>
+      <form class="send" data-f="send"><input id="msg" type="text" required maxlength="1000" autocomplete="off" placeholder="Votre message" aria-label="Votre message"><button class="btn sm" type="submit">Envoyer</button></form>
+      <p class="note" style="margin-top:8px">Ne payez jamais à l’avance. Rencontrez le vendeur dans un lieu public.</p></div>`, 'conv');
+    st.conv = { id: cid, listingId: meta.listingId, title: meta.title, other: meta.other, otherName: meta.otherName, messages };
+    renderChat();
+    api.markRead(cid).then(refreshUnread).catch(() => {});
+  } catch (e) { closeOv(); fail(e); }
+}
+async function contact(l) {
+  if (!st.user) { needLogin({ k: 'contact', id: l.id }); return; }
+  const cid = await api.openConversation(l.id, l.owner, st.user.id);
+  await showConversation(cid, { listingId: l.id, title: l.t, other: l.owner, otherName: l.seller });
+}
+async function showInbox() {
+  if (!st.user) { needLogin(null); return; }
+  const tok = openOv('<h2>Messages</h2><p class="loading">Chargement…</p>', 'inbox');
+  try {
+    const convs = await api.listConversations(st.user.id);
+    if (tok !== st.ovTok) return;
+    st.convs = convs;
+    st.unread = convs.reduce((n, c) => n + c.unread, 0);
+    renderAcct();
+    openOv('<h2>Messages</h2>' + (convs.length
+      ? `<div class="list">${convs.map(c => `<div><span class="t">${esc(shortName(c.otherName))} · ${esc(c.title)}${c.unread ? `<span class="dot">${c.unread}</span>` : ''}</span><span class="note">${ago(c.last)}</span><span class="a"><button type="button" class="btn sm" data-a="openconv" data-id="${esc(c.id)}">Ouvrir</button></span></div>`).join('')}</div>`
+      : '<div class="panel"><p class="note">Aucune conversation pour le moment. Ouvrez une annonce et touchez « Écrire au vendeur ».</p></div>'), 'inbox');
+  } catch (e) { closeOv(); fail(e); }
+}
+
+/* ---------- Mon compte ---------- */
+function helpHtml() {
+  const feedback = st.user
+    ? `<form class="f" data-f="feedback" style="margin-top:0"><div class="two"><label for="fb-t">Sujet<select id="fb-t"><option>Idée d’amélioration</option><option>Problème rencontré</option><option>Question</option><option>Autre</option></select></label><label for="fb-r">Satisfaction<select id="fb-r"><option value="5">5 sur 5</option><option value="4">4 sur 5</option><option value="3">3 sur 5</option><option value="2">2 sur 5</option><option value="1">1 sur 5</option></select></label></div><label for="fb-m">Votre message<textarea id="fb-m" required maxlength="600" placeholder="Dites-nous ce qui manque ou ce qui ne marche pas"></textarea></label><button class="btn sm" type="submit" style="justify-self:start">Envoyer mon avis</button></form>`
+    : '<p class="note">Connectez-vous pour nous envoyer votre avis.</p><div class="btns"><button type="button" class="btn sm" data-a="login">Se connecter</button></div>';
+  return `<div class="panel"><h3>Donner votre avis</h3>${feedback}</div>
+  <div class="panel"><h3>Questions fréquentes</h3>
+  <details><summary>Comment publier une annonce ?</summary><p>Connectez-vous, touchez « Déposer une annonce », ajoutez des photos, un titre, un prix et une description.</p></details>
+  <details><summary>Comment contacter un vendeur ?</summary><p>Ouvrez l’annonce et touchez « Écrire au vendeur ». Vous devez être connecté. Vos conversations sont dans « Messages ».</p></details>
+  <details><summary>Comment éviter les arnaques ?</summary><p>Rencontrez le vendeur dans un lieu public, vérifiez l’article avant de payer et ne versez jamais d’argent à l’avance. Signalez toute annonce suspecte.</p></details>
+  <details><summary>Puis-je modifier ou supprimer mon annonce ?</summary><p>Oui, depuis « Mes annonces » ou depuis la fiche de l’annonce. Vous pouvez aussi la marquer comme vendue.</p></details>
+  <details><summary>Comment supprimer mon compte ?</summary><p>Ouvrez votre compte, puis « Paramètres » et « Supprimer mon compte ». Vos données sont effacées.</p></details>
+  <details><summary>Combien coûte Locachat ?</summary><p>Le service est gratuit pendant le lancement.</p></details></div>
+  <div class="panel"><h3>Informations légales</h3><div class="btns" style="margin-top:0"><button type="button" class="btn ghost sm" data-a="legal" data-k="cgu">Conditions d’utilisation</button><button type="button" class="btn ghost sm" data-a="legal" data-k="priv">Confidentialité</button></div></div>`;
+}
+function settingsHtml() {
+  const th = store.get('lc_theme', 'auto');
+  const p = st.profile || { display_name: '', city: '' };
+  return `<form class="f" data-f="settings"><label for="p-n">Nom complet<input id="p-n" required maxlength="60" value="${esc(p.display_name)}"></label>
+  <label for="p-c">Ville<select id="p-c"><option value="">Non précisée</option>${CITIES.map(c => `<option${p.city === c ? ' selected' : ''}>${c}</option>`).join('')}</select></label>
+  <div class="panel" style="margin-top:0"><h3>Apparence</h3><div class="opts" role="radiogroup" aria-label="Thème">${[['auto', 'Automatique'], ['light', 'Clair'], ['dark', 'Sombre']].map(x => `<label><input type="radio" name="theme" value="${x[0]}"${th === x[0] ? ' checked' : ''}> ${x[1]}</label>`).join('')}</div></div>
+  <button class="btn" type="submit" style="justify-self:start">Enregistrer</button></form>
+  <div class="panel dng"><h3>Supprimer mon compte</h3><p class="note">Votre compte, vos annonces, vos photos et vos messages seront effacés définitivement.</p>
+  ${st.delAcc
+    ? '<form class="f" data-f="delacc"><label for="d-c">Tapez SUPPRIMER pour confirmer<input id="d-c" autocomplete="off"></label><p class="err" id="d-err" role="alert" hidden></p><button class="btn danger sm" type="submit" style="justify-self:start">Supprimer définitivement</button></form>'
+    : '<div class="btns"><button type="button" class="btn ghost sm" data-a="delacc">Supprimer mon compte</button></div>'}</div>`;
+}
+function mineHtml() {
+  if (!st.mine.length) return '<div class="panel"><p class="note">Vous n’avez pas encore d’annonce.</p></div><div class="btns"><button type="button" class="btn" data-a="publish">Déposer une annonce</button></div>';
+  return `<div class="list">${st.mine.map(i => `<div><span class="t">${esc(i.t)}${i.sold ? ' · Vendu' : ''}</span><span class="note">${fmt(i.price)} · ${esc(i.city)} · ${ago(i.ts)}</span><span class="a"><button type="button" class="btn ghost sm" data-a="open" data-id="${esc(i.id)}">Voir</button><button type="button" class="btn ghost sm" data-a="edit" data-id="${esc(i.id)}">Modifier</button><button type="button" class="btn ghost sm" data-a="sold" data-id="${esc(i.id)}">${i.sold ? 'Remettre en vente' : 'Vendu'}</button><button type="button" class="btn ${st.confirmDel === i.id ? 'danger' : 'ghost'} sm" data-a="del" data-id="${esc(i.id)}">${st.confirmDel === i.id ? 'Confirmer' : 'Supprimer'}</button></span></div>`).join('')}</div><div class="btns"><button type="button" class="btn" data-a="publish">Déposer une annonce</button></div>`;
+}
+async function showAccount(tab, fresh = true) {
+  if (!st.user) { needLogin(null); return; }
+  st.tab = tab || st.tab || 'mine';
+  const name = (st.profile && st.profile.display_name) || 'Mon compte';
+  const tabs = [['mine', 'Mes annonces'], ['settings', 'Paramètres'], ['help', 'Aide et avis']];
+  const head = `<h2>${esc(name)}</h2><p class="note" style="margin-top:6px">${esc(st.user.email || '')}</p>
+    <div class="tabs" role="group" aria-label="Sections du compte">${tabs.map(x => `<button type="button" data-a="tab" data-t="${x[0]}" aria-pressed="${st.tab === x[0]}">${x[1]}</button>`).join('')}</div>`;
+  const out = '<div class="btns"><button type="button" class="btn ghost sm" data-a="logout">Se déconnecter</button></div>';
+  if (st.tab === 'mine') {
+    if (fresh) {
+      const tok = openOv(head + '<p class="loading">Chargement…</p>', 'account');
+      try { st.mine = await api.fetchMyListings(st.user.id); } catch (e) { closeOv(); fail(e); return; }
+      if (tok !== st.ovTok) return;
+    }
+    openOv(head + mineHtml(), 'account');
+  } else if (st.tab === 'settings') openOv(head + settingsHtml() + out, 'account');
+  else openOv(head + helpHtml() + out, 'account');
+}
+function showLegal(k) {
+  const cgu = k === 'cgu';
+  openOv(`<h2>${cgu ? 'Conditions d’utilisation' : 'Confidentialité'}</h2><div class="panel safe"><p>Texte provisoire. À faire rédiger et valider par un juriste avant d’ouvrir le site au public.</p></div>
+  <div class="panel"><p>Ce que le texte final devra couvrir :</p><ul style="margin:8px 0 0;padding-left:18px;color:var(--muted)">${(cgu
+    ? ['Rôle de Locachat : mise en relation, sans être partie à la vente', 'Articles et services interdits', 'Responsabilité des utilisateurs et des annonces', 'Modération, suspension de compte et signalements', 'Gratuité du lancement et évolution des tarifs']
+    : ['Données collectées : nom, email, ville, annonces, photos, messages', 'Finalités : compte, mise en relation, modération', 'Durée de conservation et suppression du compte', 'Droits d’accès, de rectification et de suppression', 'Prestataires utilisés : Supabase (hébergement), Google (connexion Google)']
+  ).map(x => `<li>${x}</li>`).join('')}</ul></div><div class="btns"><button type="button" class="btn ghost sm" data-a="close">Fermer</button></div>`, 'legal');
+}
+
+/* ---------- Clics ---------- */
+document.addEventListener('click', e => {
+  const a = e.target.closest('[data-a]');
+  if (!a) return;
+  const act = a.dataset.a, id = a.dataset.id;
+  const run = p => p.catch(fail);
+  if (act === 'cat') { st.cat = a.dataset.c; renderChips(); loadListings(true); }
+  else if (act === 'more') loadListings(false);
+  else if (act === 'retry') loadListings(true);
+  else if (act === 'open') { st.confirmDel = null; run(openListing(id)); }
+  else if (act === 'openlisting') run(openListing(id));
+  else if (act === 'close') closeOv();
+  else if (act === 'publish') showPublish();
+  else if (act === 'edit') run(getListing(id).then(l => { if (l) showPublish(l); }));
+  else if (act === 'login') { st.after = null; showAuth('login'); }
+  else if (act === 'signup') showAuth('signup');
+  else if (act === 'forgot') showAuth('forgot');
+  else if (act === 'google') run(api.signInGoogle());
+  else if (act === 'logout') run(api.signOut().then(() => applySession(null)).then(() => { closeOv(); toast('Vous êtes déconnecté.'); }));
+  else if (act === 'inbox') run(showInbox());
+  else if (act === 'openconv') { const c = st.convs.find(x => x.id === id); if (c) run(showConversation(c.id, { listingId: c.listingId, title: c.title, other: c.other, otherName: c.otherName })); }
+  else if (act === 'contact') run(contact(st.listing));
+  else if (act === 'account') { st.delAcc = false; run(showAccount('mine')); }
+  else if (act === 'tab') { st.delAcc = false; run(showAccount(a.dataset.t)); }
+  else if (act === 'help') openOv('<h2>Aide et avis</h2>' + helpHtml(), 'help');
+  else if (act === 'legal') showLegal(a.dataset.k);
+  else if (act === 'img') { st.imgIdx = Number(a.dataset.i); showListing(st.listing, true); }
+  else if (act === 'rmphoto') {
+    const p = st.form.photos.splice(Number(a.dataset.i), 1)[0];
+    if (p && p.id) st.form.removed.push(p);
+    renderPhotoThumbs();
+  }
+  else if (act === 'sold') run(toggleSold(id));
+  else if (act === 'del') run(removeListing(id));
+  else if (act === 'delacc') { st.delAcc = true; run(showAccount('settings', false)); }
+});
+$('#ov').addEventListener('click', e => { if (e.target === $('#ov')) closeOv(); });
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('#ov').hidden) closeOv(); });
+document.addEventListener('change', e => {
+  const t = e.target;
+  if (t.id === 'f-img') { addFormPhotos(t.files); t.value = ''; }
+  else if (t.name === 'theme') { applyTheme(t.value); store.set('lc_theme', t.value); }
+});
+
+/* ---------- Formulaires ---------- */
+document.addEventListener('submit', e => {
+  const name = e.target.dataset && e.target.dataset.f;
+  if (!name) return;
+  e.preventDefault();
+  const form = e.target;
+  const btn = form.querySelector('[type=submit]');
+  const go = async fn => {
+    if (btn) btn.disabled = true;
+    try { await fn(); } catch (err) { if (name === 'login' || name === 'signup' || name === 'forgot' || name === 'newpw') authErr(api.friendlyError(err)); else fail(err); }
+    if (btn && btn.isConnected) btn.disabled = false;
   };
-  r.readAsDataURL(file);
- });
-}
-function addPhotos(files){
- var room=MAX_PHOTOS-st.photos.length;
- var list=Array.prototype.slice.call(files).filter(function(f){return /^image\//.test(f.type)}).slice(0,room);
- if(!list.length){if(room<=0)toast('4 photos au maximum');return}
- Promise.all(list.map(shrink)).then(function(arr){
-  st.photos=st.photos.concat(arr);
-  var p=$('#pth');if(p)p.innerHTML=thumbsHtml();
- }).catch(function(){toast('Cette image n’a pas pu être lue')});
-}
-
-function afterLogin(){
- renderAcct();renderGrid();closeOv();
- var a=st.after;st.after=null;
- if(a==='publish')showPublish();
- else if(a&&a.indexOf('fav:')===0){toggleFav(+a.slice(4))}
-}
-function toggleFav(id){
- if(!user){needLogin('fav:'+id);return}
- var l=(favs[user.id]||[]).slice();var i=l.indexOf(id);
- if(i>=0){l.splice(i,1);toast('Retiré des favoris')}else{l.push(id);toast('Ajouté aux favoris')}
- favs[user.id]=l;save('lc_favs',favs);renderGrid();
- if(!$('#ov').hidden){if(st.open!==null)showDetail(st.open,true);else showAccount(st.tab)}
-}
-
-/* évènements */
-document.addEventListener('click',function(e){
- var a=e.target.closest('[data-a]');if(!a)return;
- var act=a.getAttribute('data-a'),id=+a.getAttribute('data-id');
- if(act==='cat'){st.cat=a.getAttribute('data-c');renderChips();renderGrid()}
- else if(act==='open'){st.confirmDel=null;showDetail(id)}
- else if(act==='close'){closeOv()}
- else if(act==='publish'){showPublish()}
- else if(act==='edit'){showPublish(id)}
- else if(act==='login'){st.after=null;showAuth('login')}
- else if(act==='signup'){showAuth('signup')}
- else if(act==='account'){st.delAcc=false;showAccount('mine')}
- else if(act==='tab'){st.delAcc=false;showAccount(a.getAttribute('data-t'))}
- else if(act==='help'){openOv('<h2>Aide et avis</h2>'+helpHtml())}
- else if(act==='legal'){showLegal(a.getAttribute('data-k'))}
- else if(act==='fav'){toggleFav(id)}
- else if(act==='logout'){user=null;uid=null;try{localStorage.removeItem('lc_session')}catch(er){}renderAcct();renderGrid();closeOv();toast('Vous êtes déconnecté. Vos annonces sont conservées.')}
- else if(act==='img'){st.imgIdx=+a.getAttribute('data-i');showDetail(st.open,true)}
- else if(act==='rmphoto'){st.photos.splice(+a.getAttribute('data-i'),1);$('#pth').innerHTML=thumbsHtml()}
- else if(act==='sold'){var it=find(id);if(it&&user&&it.owner===user.id){it.sold=!it.sold;save('lc_items',items);renderGrid();toast(it.sold?'Marquée comme vendue':'Remise en vente');if(st.open!==null)showDetail(st.open,true);else showAccount('mine')}}
- else if(act==='del'){
-  if(st.confirmDel!==id){st.confirmDel=id;if(st.open!==null)showDetail(id,true);else showAccount('mine');return}
-  items=items.filter(function(i){return i.id!==id});save('lc_items',items);st.confirmDel=null;renderGrid();toast('Annonce supprimée');
-  if(st.open!==null){closeOv()}else showAccount('mine');
- }
- else if(act==='delacc'){st.delAcc=true;showAccount('settings')}
+  if (name === 'login') go(() => api.signIn($('#a-e').value.trim(), $('#a-p').value));
+  else if (name === 'signup') go(async () => {
+    const email = $('#a-e').value.trim();
+    const session = await api.signUp($('#a-n').value.trim(), $('#a-c').value, email, $('#a-p').value);
+    if (!session) showAuth('checkmail', email);
+  });
+  else if (name === 'forgot') go(async () => { const email = $('#a-e').value.trim(); await api.sendReset(email); showAuth('sentreset', email); });
+  else if (name === 'newpw') go(async () => { await api.setPassword($('#a-p').value); closeOv(); toast('Mot de passe modifié.'); });
+  else if (name === 'pub') submitListing(form);
+  else if (name === 'send') go(async () => {
+    const input = $('#msg'), body = input.value.trim();
+    if (!body || !st.conv) return;
+    const m = await api.sendMessage(st.conv.id, st.user.id, body);
+    input.value = '';
+    if (st.conv && !st.conv.messages.some(x => x.id === m.id)) st.conv.messages.push(m);
+    renderChat();
+  });
+  else if (name === 'report') go(async () => {
+    if (!st.user) { needLogin(null); return; }
+    await api.sendReport(st.listing.id, st.user.id, $('#rp-r').value);
+    toast('Annonce signalée. Merci');
+  });
+  else if (name === 'feedback') go(async () => {
+    await api.sendFeedback(st.user.id, $('#fb-t').value, Number($('#fb-r').value), $('#fb-m').value.trim());
+    $('#fb-m').value = '';
+    toast('Merci pour votre avis');
+  });
+  else if (name === 'settings') go(async () => {
+    const display_name = $('#p-n').value.trim() || (st.profile && st.profile.display_name) || 'Utilisateur';
+    const city = $('#p-c').value || null;
+    await api.saveProfile(st.user.id, { display_name, city });
+    st.profile = Object.assign({}, st.profile, { display_name, city });
+    renderAcct(); loadListings(true);
+    toast('Paramètres enregistrés');
+  });
+  else if (name === 'delacc') go(async () => {
+    if ($('#d-c').value.trim().toUpperCase() !== 'SUPPRIMER') { const el = $('#d-err'); el.textContent = 'Tapez le mot SUPPRIMER pour confirmer.'; el.hidden = false; return; }
+    await api.deleteAccount(st.user.id);
+    await applySession(null);
+    closeOv(); loadListings(true);
+    toast('Votre compte a été supprimé.');
+  });
 });
-$('#ov').addEventListener('click',function(e){if(e.target===$('#ov'))closeOv()});
-document.addEventListener('keydown',function(e){if(e.key==='Escape'&&!$('#ov').hidden)closeOv()});
-document.addEventListener('change',function(e){
- var t=e.target;if(!t)return;
- if(t.id==='f-img'){addPhotos(t.files);t.value=''}
- else if(t.name==='theme'){applyTheme(t.value);save('lc_theme',t.value)}
+
+/* ---------- Recherche et filtres ---------- */
+let searchTimer = null;
+$('#q').addEventListener('input', e => { st.q = e.target.value; clearTimeout(searchTimer); searchTimer = setTimeout(() => loadListings(true), 350); });
+$('#city').addEventListener('change', e => { st.city = e.target.value; loadListings(true); });
+$('#type').addEventListener('change', e => { st.type = e.target.value; loadListings(true); });
+$('#sort').addEventListener('change', e => { st.sort = e.target.value; loadListings(true); });
+
+/* ---------- Démarrage ---------- */
+CITIES.forEach(c => { const o = document.createElement('option'); o.value = c; o.textContent = c; $('#city').appendChild(o); });
+renderAcct();
+renderChips();
+loadListings(true);
+
+api.onAuth((event, session) => {
+  // On attend un instant : Supabase demande de ne pas appeler la base directement dans cette fonction
+  setTimeout(async () => {
+    await applySession(session);
+    if (event === 'PASSWORD_RECOVERY') showAuth('newpw');
+  }, 0);
 });
-function authErr(m){var er=$('#su-err');if(er){er.textContent=m;er.hidden=false}}
-document.addEventListener('submit',function(e){
- var f=e.target.getAttribute&&e.target.getAttribute('data-f');if(!f)return;
- e.preventDefault();
- if(f==='send'){
-  if(!user){needLogin();return}
-  var inp=$('#msg');var m=inp.value.trim()||inp.placeholder;
-  (st.chats[st.open]=st.chats[st.open]||[]).push(m);showDetail(st.open,true);
- }else if(f==='su1'||f==='li1'){
-  var d=digits($('#s-p').value);
-  if(d.length<9){authErr('Entrez un numéro à 9 chiffres, par exemple 06 123 45 67.');return}
-  var ex=users.filter(function(u){return digits(u.phone)===d})[0];
-  if(f==='su1'){
-   if(ex){authErr('Ce numéro a déjà un compte. Connectez-vous.');return}
-   st.auth={mode:'signup',name:$('#s-n').value.trim(),phone:fmtPhone(d),city:$('#s-c').value};
-  }else{
-   if(!ex){authErr('Aucun compte avec ce numéro. Créez un compte.');return}
-   st.auth={mode:'login',phone:ex.phone,userId:ex.id};
+
+// Sur téléphone, la connexion en direct peut s'endormir : on vérifie les messages au retour sur la page
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden || !st.user) return;
+  refreshUnread();
+  if (st.ov === 'conv' && st.conv) {
+    api.fetchMessages(st.conv.id).then(msgs => { if (st.conv) { st.conv.messages = msgs; renderChat(); } }).catch(() => {});
   }
-  showCode();
- }else if(f==='code'){
-  if($('#s-k').value.trim()!=='1234'){authErr('Code incorrect. Saisissez 1234 pour cette simulation.');return}
-  if(st.auth.mode==='signup'){
-   user={id:'u'+Date.now().toString(36)+Math.random().toString(36).slice(2,6),name:st.auth.name,phone:st.auth.phone,city:st.auth.city,notif:{msg:true,sms:true,wa:false}};
-   users.push(user);save('lc_users',users);toast('Compte créé. Bienvenue '+user.name.split(' ')[0]);
-  }else{
-   user=users.filter(function(u){return u.id===st.auth.userId})[0];toast('Bon retour '+user.name.split(' ')[0]);
-  }
-  uid=user.id;save('lc_session',uid);afterLogin();
- }else if(f==='pub'){
-  var rec={t:$('#f-t').value.trim(),cat:$('#f-c').value,city:$('#f-v').value,price:Math.max(0,+$('#f-p').value||0),type:$('#f-ty').value,desc:$('#f-d').value.trim(),imgs:st.photos.slice()};
-  rec.per=rec.type==='location'?'/ jour':'';
-  var next,ed=st.editId?find(st.editId):null;
-  if(ed){next=items.map(function(i){return i.id===ed.id?Object.assign({},i,rec):i})}
-  else{next=[Object.assign({id:Date.now(),owner:user.id,seller:user.name,ts:Date.now()},rec)].concat(items)}
-  if(!save('lc_items',next)){var pe=$('#pub-err');pe.textContent='Espace de stockage plein. Retirez une photo ou supprimez une ancienne annonce.';pe.hidden=false;return}
-  items=next;var wasEdit=!!ed;closeOv();st.cat='';st.q='';$('#q').value='';renderChips();renderGrid();toast(wasEdit?'Annonce modifiée':'Annonce publiée');
-  if(!wasEdit){try{$('#grid').scrollIntoView({behavior:'smooth',block:'start'})}catch(er){}}
- }else if(f==='review'){
-  if(!user){needLogin();return}
-  var it=find(st.open);if(!it)return;
-  reviews=reviews.filter(function(r){return !(r.about===it.owner&&r.by===user.id)});
-  reviews.push({about:it.owner,by:user.id,byName:user.name,rating:+$('#r-s').value,text:$('#r-t').value.trim(),ts:Date.now()});
-  save('lc_reviews',reviews);showDetail(st.open,true);toast('Merci pour votre avis');
- }else if(f==='report'){
-  if(!user){needLogin();return}
-  var rp=load('lc_reports',[]);rp.push({item:st.open,by:user.id,reason:$('#rp-r').value,ts:Date.now()});save('lc_reports',rp);
-  toast('Annonce signalée. Merci');
- }else if(f==='feedback'){
-  var fb=load('lc_feedback',[]);fb.push({by:user?user.id:null,subject:$('#fb-t').value,rating:+$('#fb-r').value,msg:$('#fb-m').value.trim(),ts:Date.now()});save('lc_feedback',fb);
-  $('#fb-m').value='';toast('Merci pour votre avis');
- }else if(f==='settings'){
-  user.name=$('#p-n').value.trim()||user.name;user.city=$('#p-c').value;
-  user.notif={msg:$('#n-m').checked,sms:$('#n-s').checked,wa:$('#n-w').checked};
-  items=items.map(function(i){return i.owner===user.id?Object.assign({},i,{seller:user.name}):i});
-  save('lc_users',users);save('lc_items',items);renderAcct();renderGrid();toast('Paramètres enregistrés');showAccount('settings');
- }else if(f==='delacc'){
-  if($('#d-c').value.trim().toUpperCase()!=='SUPPRIMER'){var de=$('#d-err');de.textContent='Tapez le mot SUPPRIMER pour confirmer.';de.hidden=false;return}
-  var gone=user.id;
-  items=items.filter(function(i){return i.owner!==gone});delete favs[gone];
-  reviews=reviews.filter(function(r){return r.by!==gone&&r.about!==gone});
-  users=users.filter(function(u){return u.id!==gone});
-  save('lc_items',items);save('lc_favs',favs);save('lc_reviews',reviews);save('lc_users',users);
-  try{localStorage.removeItem('lc_session')}catch(er){}
-  user=null;uid=null;closeOv();renderAcct();renderGrid();toast('Votre compte a été supprimé');
- }
 });
-$('#q').addEventListener('input',function(e){st.q=e.target.value;renderGrid()});
-$('#city').addEventListener('change',function(e){st.city=e.target.value;renderGrid()});
-$('#type').addEventListener('change',function(e){st.type=e.target.value;renderGrid()});
-$('#sort').addEventListener('change',function(e){st.sort=e.target.value;renderGrid()});
-
-CITIES.forEach(function(c){var o=document.createElement('option');o.value=c;o.textContent=c;$('#city').appendChild(o)});
-renderAcct();renderChips();renderGrid();
-})();
+setInterval(() => { if (!document.hidden) refreshUnread(); }, 60000);

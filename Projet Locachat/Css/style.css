@@ -1,4 +1,4 @@
-/* Remise à zéro de base */
+/* Remise à zéro de base (le site tourne hors de claude.ai) */
 :root{color-scheme:light}
 body{margin:0}
 img{max-width:100%}
@@ -183,3 +183,16 @@ details p{margin-top:6px;color:var(--muted);font-size:.93rem}
 @media (prefers-reduced-motion:no-preference){
   .card{transition:border-color .15s,transform .15s}.card:hover{transform:translateY(-2px)}
 }
+
+/* ===== Ajouts pour la version Supabase ===== */
+.dot{display:inline-grid;place-items:center;min-width:20px;height:20px;padding:0 6px;border-radius:999px;background:var(--red);color:#fff;font-size:.75rem;font-weight:700;margin-left:4px}
+.chat.big{max-height:50vh;min-height:140px;padding-right:4px}
+.msg{display:flex;flex-direction:column;gap:2px}
+.msg.in{align-self:flex-start;background:var(--surface2);color:var(--fg);border-radius:14px 14px 14px 4px}
+.msg .who{font-size:.75rem;font-weight:700;opacity:.85}
+.msg .when{font-size:.7rem;opacity:.7;align-self:flex-end}
+.more{display:flex;justify-content:center;margin:-8px 0 36px}
+.loading{grid-column:1/-1;text-align:center;color:var(--muted);padding:34px 0}
+.sep{display:flex;align-items:center;gap:10px;color:var(--muted);font-size:.85rem;margin:2px 0}
+.sep::before,.sep::after{content:"";flex:1;height:1px;background:var(--line)}
+.btn.block{width:100%;text-align:center}
