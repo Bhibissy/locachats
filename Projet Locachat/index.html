@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Locachat</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=Figtree:wght@400;500;600;700&display=swap">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div id="app">
+<header class="top">
+  <div class="wrap">
+    <a class="brand" href="#" aria-label="Locachat, accueil">
+      <svg viewBox="0 0 40 40" aria-hidden="true">
+        <defs><clipPath id="pin"><path d="M20 2C11.9 2 5.5 8.3 5.5 16.2c0 10.4 14.5 21.8 14.5 21.8S34.5 26.6 34.5 16.2C34.5 8.3 28.1 2 20 2z"/></clipPath></defs>
+        <g clip-path="url(#pin)"><polygon points="0,0 26,0 0,26" fill="#00873E"/><polygon points="26,0 40,0 40,14 14,40 0,40 0,26" fill="#F2C200"/><polygon points="40,14 40,40 14,40" fill="#CF2A22"/></g>
+        <circle cx="20" cy="16.5" r="5.5" fill="#fff"/>
+      </svg>
+      <b>Locachat</b>
+    </a>
+    <div class="acct" id="acct"></div>
+  </div>
+</header>
+
+<main>
+<section class="hero"><div class="wrap">
+  <h1>Achetez, vendez et louez <em>près de chez vous</em></h1>
+  <p class="lead">Téléphones, électroménager, mode, services et location de matériel entre particuliers, à Brazzaville, Pointe-Noire et dans tout le Congo.</p>
+  <div class="search" role="search">
+    <input id="q" type="search" placeholder="Que cherchez-vous ? (ex. réfrigérateur, sono)" aria-label="Rechercher une annonce">
+    <select id="city" aria-label="Ville"><option value="">Tout le pays</option></select>
+    <select id="type" aria-label="Vente ou location"><option value="">Vente et location</option><option value="vente">Vente</option><option value="location">Location</option></select>
+  </div>
+  <div class="vbanner"><strong>Lancement gratuit</strong><ul><li>Annonces gratuites avec photos</li><li>Numéro vérifié</li><li>Paiement en main propre</li><li>Signalement et avis</li></ul></div>
+</div></section>
+
+<section class="wrap" aria-label="Annonces">
+  <div class="chips" id="chips"></div>
+  <div class="bar">
+    <span class="count" id="count"></span>
+    <select id="sort" aria-label="Trier"><option value="recent">Plus récentes</option><option value="asc">Prix croissant</option><option value="desc">Prix décroissant</option></select>
+  </div>
+  <div class="grid" id="grid"></div>
+</section>
+
+<section class="sec"><div class="wrap">
+  <h2>Comment ça marche</h2>
+  <p class="sub">Trois étapes, sans frais pendant le lancement.</p>
+  <ol class="steps">
+    <li><b>Créez votre compte</b><span>Avec votre nom, votre numéro de téléphone et votre ville.</span></li>
+    <li><b>Publiez avec des photos</b><span>Ajoutez jusqu’à 4 photos, un prix et une description.</span></li>
+    <li><b>Échangez et rencontrez</b><span>Discutez dans la messagerie, puis payez en main propre.</span></li>
+  </ol>
+</div></section>
+
+<section class="sec"><div class="wrap">
+  <h2>Acheter et vendre en confiance</h2>
+  <p class="sub">La sécurité repose sur quatre réflexes.</p>
+  <div class="cols">
+    <div class="box"><h3>Numéro vérifié</h3><p>Chaque compte confirme son numéro de téléphone avant de publier.</p></div>
+    <div class="box"><h3>Signalement</h3><p>Chaque annonce peut être signalée avec un motif. L’équipe modère.</p></div>
+    <div class="box"><h3>Avis sur les vendeurs</h3><p>Notez un vendeur après votre échange pour aider les autres.</p></div>
+    <div class="box"><h3>Paiement en main propre</h3><p>Rendez-vous dans un lieu public, vérifiez l’article, puis payez. Ne versez jamais d’argent à l’avance.</p></div>
+  </div>
+</div></section>
+</main>
+
+<footer><div class="wrap">
+  <span>Locachat · prototype V1. Comptes, annonces et photos restent enregistrés sur cet appareil.</span>
+  <button type="button" class="linkbtn" data-a="legal" data-k="cgu">Conditions d’utilisation</button>
+  <button type="button" class="linkbtn" data-a="legal" data-k="priv">Confidentialité</button>
+  <button type="button" class="linkbtn" data-a="help">Aide</button>
+</div></footer>
+</div>
+
+<div class="ov" id="ov" hidden>
+  <div class="sheet" role="dialog" aria-modal="true" aria-label="Fenêtre" tabindex="-1" id="sheet">
+    <button type="button" class="x" data-a="close" aria-label="Fermer">×</button>
+    <div id="ov-body"></div>
+  </div>
+</div>
+<div class="toast" id="toast" role="status" hidden></div>
+
+<script src="js/app.js"></script>
+</body>
+</html>
