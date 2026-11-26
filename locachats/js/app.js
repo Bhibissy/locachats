@@ -343,6 +343,26 @@ function showAuth(mode, msg) {
     h = `<h2>Nouveau mot de passe</h2><form class="f" data-f="newpw"><label for="a-p">Nouveau mot de passe (8 caractères minimum)<input id="a-p" type="password" required minlength="8" autocomplete="new-password"></label>${err}<button class="btn" type="submit">Enregistrer</button></form>`;
   }
   openOv(h, 'auth');
+  addEyes();
+}
+// Petit œil pour afficher ou cacher le mot de passe
+const EYE = '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z"/><circle cx="12" cy="12" r="3"/></svg>';
+const EYE_OFF = '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17.9 17.9A10.9 10.9 0 0 1 12 19C5 19 1 12 1 12a18.5 18.5 0 0 1 5.1-5.9M9.9 4.2A10.9 10.9 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.2 3.2M1 1l22 22"/><path d="M14.1 14.1a3 3 0 1 1-4.2-4.2"/></svg>';
+function addEyes() {
+  document.querySelectorAll('#ov-body input[type=password]').forEach(inp => {
+    const box = document.createElement('span');
+    box.className = 'pw';
+    inp.parentNode.insertBefore(box, inp);
+    box.appendChild(inp);
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'eye';
+    b.dataset.a = 'eye';
+    b.setAttribute('aria-label', 'Afficher le mot de passe');
+    b.setAttribute('aria-pressed', 'false');
+    b.innerHTML = EYE;
+    box.appendChild(b);
+  });
 }
 
 // Appelé à chaque changement de connexion (ouverture du site, connexion, déconnexion)
@@ -521,6 +541,14 @@ document.addEventListener('click', e => {
   else if (act === 'help') openOv('<h2>Aide et avis</h2>' + helpHtml(), 'help');
   else if (act === 'legal') showLegal(a.dataset.k);
   else if (act === 'img') { st.imgIdx = Number(a.dataset.i); showListing(st.listing, true); }
+  else if (act === 'eye') {
+    const inp = a.parentNode.querySelector('input');
+    const show = inp.type === 'password';
+    inp.type = show ? 'text' : 'password';
+    a.innerHTML = show ? EYE_OFF : EYE;
+    a.setAttribute('aria-pressed', String(show));
+    a.setAttribute('aria-label', show ? 'Cacher le mot de passe' : 'Afficher le mot de passe');
+  }
   else if (act === 'gprev' || act === 'gnext') slide(act === 'gnext' ? 1 : -1);
   else if (act === 'copylink') {
     const url = shareUrl(st.listing);

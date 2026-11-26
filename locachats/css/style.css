@@ -208,3 +208,9 @@ details p{margin-top:6px;color:var(--muted);font-size:.93rem}
 .rrow:last-child{border-bottom:0}
 .rrow span{color:var(--muted)}
 .rrow b{text-align:right;overflow-wrap:anywhere}
+
+/* ===== Petit œil du mot de passe ===== */
+.pw{position:relative;display:block}
+.pw input{width:100%;padding-right:48px}
+.eye{position:absolute;right:4px;top:50%;transform:translateY(-50%);width:40px;height:40px;border:0;background:none;color:var(--muted);display:grid;place-items:center;border-radius:50%;padding:0}
+.eye:hover{color:var(--fg)}
