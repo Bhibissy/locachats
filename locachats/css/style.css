@@ -196,3 +196,15 @@ details p{margin-top:6px;color:var(--muted);font-size:.93rem}
 .sep{display:flex;align-items:center;gap:10px;color:var(--muted);font-size:.85rem;margin:2px 0}
 .sep::before,.sep::after{content:"";flex:1;height:1px;background:var(--line)}
 .btn.block{width:100%;text-align:center}
+
+/* ===== Ajout 002 : galerie avec flèches, infos de location ===== */
+.gal{position:relative}
+.gnav{position:absolute;top:50%;transform:translateY(-50%);width:42px;height:42px;border-radius:50%;border:0;background:rgba(0,0,0,.5);color:#fff;font-size:1.8rem;line-height:1;padding:0 0 3px;display:grid;place-items:center;z-index:2}
+.gnav:hover{background:rgba(0,0,0,.7)}
+.gnav.prev{left:8px}
+.gnav.next{right:8px}
+.gcount{position:absolute;right:10px;bottom:10px;background:rgba(0,0,0,.55);color:#fff;font-size:.78rem;font-weight:700;border-radius:999px;padding:3px 10px}
+.rrow{display:flex;justify-content:space-between;gap:12px;padding:6px 0;border-bottom:1px solid var(--line);font-size:.93rem}
+.rrow:last-child{border-bottom:0}
+.rrow span{color:var(--muted)}
+.rrow b{text-align:right;overflow-wrap:anywhere}

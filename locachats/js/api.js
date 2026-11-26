@@ -113,7 +113,21 @@ async function addPhotos(uid, listingId, photos, startPosition) {
 }
 
 /* ---------- Annonces ---------- */
-const LIST_COLS = 'id,owner_id,title,description,category,type,city,price,sold,created_at,profiles(display_name),listing_photos(id,path,position)';
+const LIST_COLS = 'id,owner_id,title,description,category,type,city,price,sold,created_at,profiles(display_name),listing_photos(id,path,position),rent_unit,available_from,available_to,hours,min_duration,deposit,delivery';
+
+// Les infos de location (facultatives). Pour une vente, on les vide.
+function rentFields(f) {
+  const r = f.type === 'location' && f.rent ? f.rent : {};
+  return {
+    rent_unit: f.type === 'location' ? (r.unit || 'jour') : null,
+    available_from: r.from || null,
+    available_to: r.to || null,
+    hours: r.hours || null,
+    min_duration: r.min || null,
+    deposit: r.deposit == null ? null : r.deposit,
+    delivery: !!r.delivery
+  };
+}
 
 // Transforme une ligne de la base en objet simple pour le site
 function shape(r) {
@@ -131,6 +145,7 @@ function shape(r) {
     price: Number(r.price),
     sold: r.sold,
     ts: new Date(r.created_at).getTime(),
+    rent: r.type === 'location' ? { unit: r.rent_unit || 'jour', from: r.available_from, to: r.available_to, hours: r.hours, min: r.min_duration, deposit: r.deposit == null ? null : Number(r.deposit), delivery: !!r.delivery } : null,
     photos,
     imgs: photos.map(p => p.url),
     thumbs: photos.map(p => p.thumb)
@@ -166,7 +181,7 @@ export async function fetchListing(id) {
 
 export async function createListing(uid, f, newPhotos) {
   const row = must(await supabase.from('listings').insert({
-    owner_id: uid, title: f.t, description: f.desc, category: f.cat, type: f.type, city: f.city, price: f.price
+    owner_id: uid, title: f.t, description: f.desc, category: f.cat, type: f.type, city: f.city, price: f.price, ...rentFields(f)
   }).select('id').single());
   try {
     await addPhotos(uid, row.id, newPhotos, 0);
@@ -179,7 +194,7 @@ export async function createListing(uid, f, newPhotos) {
 
 export async function updateListing(uid, id, f, removedPhotos, newPhotos, startPosition) {
   must(await supabase.from('listings').update({
-    title: f.t, description: f.desc, category: f.cat, type: f.type, city: f.city, price: f.price
+    title: f.t, description: f.desc, category: f.cat, type: f.type, city: f.city, price: f.price, ...rentFields(f)
   }).eq('id', id));
   if (removedPhotos.length) {
     must(await supabase.from('listing_photos').delete().in('id', removedPhotos.map(p => p.id)));

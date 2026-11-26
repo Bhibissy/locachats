@@ -7,7 +7,14 @@ import { prepareImage } from './images.js';
    ===================================================================== */
 
 const CITIES = ['Brazzaville', 'Pointe-Noire', 'Dolisie', 'Nkayi', 'Oyo', 'Owando'];
-const CATS = [['tech', 'Téléphones & high-tech'], ['elec', 'Électroménager'], ['mode', 'Mode'], ['serv', 'Services'], ['loc', 'Location de matériel']];
+// [identifiant dans la base, nom affiché, exemples]. Ne change JAMAIS l'identifiant (1er mot), seulement le nom.
+const CATS = [
+  ['tech', 'Téléphones & électronique', 'téléphones, ordinateurs, écouteurs…'],
+  ['elec', 'Maison & électroménager', 'frigo, cuisinière, ventilateur, meubles…'],
+  ['mode', 'Vêtements & chaussures', 'habits, pagnes, chaussures, sacs…'],
+  ['serv', 'Services', 'réparation, coiffure, livraison, cours…'],
+  ['loc', 'Location de matériel', 'sono, bâche, groupe électrogène, outils…']
+];
 const SOON = ['Terrains', 'Véhicules', 'Immobilier'];
 const REASONS = ['Arnaque ou faux article', 'Article interdit', 'Mauvaise catégorie', 'Photos trompeuses', 'Autre'];
 const MAX_PHOTOS = 4;
@@ -45,7 +52,25 @@ const ICONS = {
 function art(cat) {
   return '<svg viewBox="0 0 120 80" preserveAspectRatio="xMidYMid slice" aria-hidden="true"><polygon points="70,0 100,0 40,80 10,80" fill="#F2C200" opacity=".22"/><polygon points="100,0 120,0 120,16 56,80 40,80" fill="#CF2A22" opacity=".14"/><polygon points="0,0 70,0 10,80 0,80" fill="#00873E" opacity=".12"/>' + (ICONS[cat] || '') + '</svg>';
 }
-const priceHtml = l => `<span class="price num">${fmt(l.price)}${l.type === 'location' ? ' <small>/ jour</small>' : ''}</span>`;
+const priceHtml = l => `<span class="price num">${fmt(l.price)}${l.type === 'location' ? ' <small>/ ' + esc(l.rent ? l.rent.unit : 'jour') + '</small>' : ''}</span>`;
+const dayFr = d => new Date(d + 'T00:00:00').toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' });
+// Lien direct vers une annonce (c'est ce qu'on envoie sur WhatsApp)
+const shareUrl = l => location.origin + location.pathname + '?a=' + encodeURIComponent(l.id);
+const shareBtns = l => `<a class="btn ghost sm" target="_blank" rel="noopener" href="https://wa.me/?text=${encodeURIComponent(l.t + ' · ' + fmt(l.price) + '\n' + shareUrl(l))}">Partager sur WhatsApp</a><button type="button" class="btn ghost sm" data-a="copylink">Copier le lien</button>`;
+function rentHtml(l) {
+  const r = l.rent;
+  if (!r) return '';
+  const rows = [];
+  if (r.from && r.to) rows.push(['Disponible', 'du ' + dayFr(r.from) + ' au ' + dayFr(r.to)]);
+  else if (r.from) rows.push(['Disponible', 'à partir du ' + dayFr(r.from)]);
+  else if (r.to) rows.push(['Disponible', 'jusqu’au ' + dayFr(r.to)]);
+  if (r.hours) rows.push(['Heures de remise', r.hours]);
+  if (r.min) rows.push(['Durée minimum', r.min]);
+  if (r.deposit) rows.push(['Caution', fmt(r.deposit)]);
+  if (r.delivery) rows.push(['Livraison', 'possible']);
+  if (!rows.length) return '';
+  return '<div class="panel"><h3>Conditions de location</h3>' + rows.map(x => `<div class="rrow"><span>${x[0]}</span><b>${esc(x[1])}</b></div>`).join('') + '</div>';
+}
 
 /* ---------- État du site (ce que le site "retient" pendant qu'il est ouvert) ---------- */
 const st = {
@@ -150,15 +175,18 @@ function showListing(l, keepIdx) {
   if (!keepIdx) st.imgIdx = 0;
   const mine = st.user && l.owner === st.user.id;
   const big = l.imgs[st.imgIdx] ? `<img src="${esc(l.imgs[st.imgIdx])}" alt="${esc(l.t)}">` : art(l.cat);
-  let h = `<h2>${esc(l.t)}${l.sold ? ' <span class="tag" style="background:var(--red);color:#fff;vertical-align:middle">Vendu</span>' : ''}</h2><div class="dtile"><div class="tile">${big}</div></div>`;
+  const n = l.imgs.length;
+  const gal = `<div class="dtile gal" id="gal"><div class="tile">${big}</div>${n > 1 ? `<button type="button" class="gnav prev" data-a="gprev" aria-label="Photo précédente">‹</button><button type="button" class="gnav next" data-a="gnext" aria-label="Photo suivante">›</button><span class="gcount">${st.imgIdx + 1} / ${n}</span>` : ''}</div>`;
+  let h = `<h2>${esc(l.t)}${l.sold ? ' <span class="tag" style="background:var(--red);color:#fff;vertical-align:middle">Vendu</span>' : ''}</h2>${gal}`;
   if (l.imgs.length > 1) h += `<div class="thumbs">${l.thumbs.map((s, i) => `<button type="button" data-a="img" data-i="${i}" aria-pressed="${i === st.imgIdx}" aria-label="Photo ${i + 1}"><img src="${esc(s)}" alt=""></button>`).join('')}</div>`;
   h += `<div class="row" style="margin-bottom:6px">${priceHtml(l)}<span>${esc(l.city)}</span><span>${ago(l.ts)}</span><span class="tag">${esc(catLabel(l.cat))}</span>${l.type === 'location' ? '<span class="tag">Location</span>' : ''}</div>`;
   h += `<p style="margin:10px 0;overflow-wrap:anywhere">${esc(l.desc)}</p>`;
+  h += rentHtml(l);
   h += `<div class="row"><span>Vendeur : <b style="color:var(--fg)">${esc(shortName(l.seller))}</b></span></div>`;
   if (mine) {
-    h += `<div class="btns"><button type="button" class="btn sm" data-a="edit" data-id="${esc(l.id)}">Modifier</button><button type="button" class="btn ghost sm" data-a="sold" data-id="${esc(l.id)}">${l.sold ? 'Remettre en vente' : 'Marquer comme vendu'}</button><button type="button" class="btn ${st.confirmDel === l.id ? 'danger' : 'ghost'} sm" data-a="del" data-id="${esc(l.id)}">${st.confirmDel === l.id ? 'Confirmer la suppression' : 'Supprimer'}</button></div>`;
+    h += `<div class="btns"><button type="button" class="btn sm" data-a="edit" data-id="${esc(l.id)}">Modifier</button><button type="button" class="btn ghost sm" data-a="sold" data-id="${esc(l.id)}">${l.sold ? 'Remettre en vente' : 'Marquer comme vendu'}</button><button type="button" class="btn ${st.confirmDel === l.id ? 'danger' : 'ghost'} sm" data-a="del" data-id="${esc(l.id)}">${st.confirmDel === l.id ? 'Confirmer la suppression' : 'Supprimer'}</button></div><div class="btns" style="margin-top:8px">${shareBtns(l)}</div>`;
   } else {
-    h += `<div class="btns"><button type="button" class="btn" data-a="contact" data-id="${esc(l.id)}">Écrire au vendeur</button><a class="btn ghost sm" target="_blank" rel="noopener" href="https://wa.me/?text=${encodeURIComponent(l.t + ' · ' + fmt(l.price) + ' sur Locachat')}">Partager sur WhatsApp</a></div>`;
+    h += `<div class="btns"><button type="button" class="btn" data-a="contact" data-id="${esc(l.id)}">Écrire au vendeur</button>${shareBtns(l)}</div>`;
     h += '<div class="panel safe"><h3>Payez en main propre</h3><p>Retrouvez le vendeur dans un lieu public, vérifiez l’article, puis payez en espèces ou par mobile money. Ne versez jamais d’argent à l’avance.</p></div>';
     h += `<div class="panel"><h3>Signaler cette annonce</h3><form class="send" data-f="report"><select id="rp-r" aria-label="Motif" style="flex:1;min-width:0;border:1.5px solid var(--line);background:var(--bg);border-radius:999px;padding:9px 14px">${REASONS.map(r => `<option>${r}</option>`).join('')}</select><button class="btn ghost sm" type="submit">Signaler</button></form></div>`;
   }
@@ -206,10 +234,20 @@ function showPublish(edit) {
   <form class="f" data-f="pub">
    <div><label class="drop" for="f-img"><b>Ajouter des photos</b><span>Jusqu’à ${MAX_PHOTOS} photos. Elles sont réduites automatiquement.</span><input id="f-img" type="file" accept="image/jpeg,image/png,image/webp" multiple></label><div class="pthumbs" id="pth" style="margin-top:10px"></div></div>
    <label for="f-t">Titre<input id="f-t" required minlength="3" maxlength="80" placeholder="Ex. Télévision LG 43 pouces" value="${v('t')}"></label>
-   <div class="two"><label for="f-c">Catégorie<select id="f-c">${CATS.map(c => `<option value="${c[0]}"${e && e.cat === c[0] ? ' selected' : ''}>${c[1]}</option>`).join('')}</select></label>
+   <div class="two"><label for="f-c">Catégorie<select id="f-c">${CATS.map(c => `<option value="${c[0]}"${e && e.cat === c[0] ? ' selected' : ''}>${c[1]} (${c[2]})</option>`).join('')}</select></label>
    <label for="f-ty">Type<select id="f-ty"><option value="vente"${e && e.type === 'vente' ? ' selected' : ''}>Vente</option><option value="location"${e && e.type === 'location' ? ' selected' : ''}>Location (prix par jour)</option></select></label></div>
    <div class="two"><label for="f-v">Ville<select id="f-v">${CITIES.map(c => `<option${defaultCity === c ? ' selected' : ''}>${c}</option>`).join('')}</select></label>
    <label for="f-p">Prix (FCFA)<input id="f-p" type="number" min="0" max="1000000000" step="500" required inputmode="numeric" placeholder="25000" value="${e ? e.price : ''}"></label></div>
+   <div class="panel" id="rent-box" style="margin-top:0"${e && e.type === 'location' ? '' : ' hidden'}>
+    <h3>Infos de location <span class="note">(facultatif)</span></h3>
+    <div class="two"><label for="r-u">Le prix est par<select id="r-u">${[['heure', 'heure'], ['jour', 'jour'], ['semaine', 'semaine'], ['mois', 'mois']].map(x => `<option value="${x[0]}"${(e && e.rent ? e.rent.unit : 'jour') === x[0] ? ' selected' : ''}>${x[1]}</option>`).join('')}</select></label>
+    <label for="r-dep">Caution (FCFA)<input id="r-dep" type="number" min="0" max="1000000000" step="500" inputmode="numeric" placeholder="Ex. 20000" value="${e && e.rent && e.rent.deposit != null ? e.rent.deposit : ''}"></label></div>
+    <div class="two"><label for="r-from">Disponible à partir du<input id="r-from" type="date" value="${e && e.rent && e.rent.from ? esc(e.rent.from) : ''}"></label>
+    <label for="r-to">Jusqu’au<input id="r-to" type="date" value="${e && e.rent && e.rent.to ? esc(e.rent.to) : ''}"></label></div>
+    <div class="two"><label for="r-h">Heures de remise<input id="r-h" maxlength="40" placeholder="Ex. 8h à 18h" value="${e && e.rent && e.rent.hours ? esc(e.rent.hours) : ''}"></label>
+    <label for="r-min">Durée minimum<input id="r-min" maxlength="40" placeholder="Ex. 1 jour" value="${e && e.rent && e.rent.min ? esc(e.rent.min) : ''}"></label></div>
+    <label class="chk" for="r-del"><input id="r-del" type="checkbox"${e && e.rent && e.rent.delivery ? ' checked' : ''}><span>Livraison possible</span></label>
+   </div>
    <label for="f-d">Description<textarea id="f-d" required maxlength="500" placeholder="État, accessoires, lieu de remise…">${v('desc')}</textarea></label>
    <p class="err" id="pub-err" role="alert" hidden></p>
    <button class="btn" type="submit">${e ? 'Enregistrer les modifications' : 'Publier l’annonce'}</button>
@@ -233,6 +271,12 @@ async function addFormPhotos(files) {
 async function submitListing(form) {
   const pubErr = m => { const el = $('#pub-err'); el.textContent = m; el.hidden = false; };
   const f = { t: $('#f-t').value.trim(), cat: $('#f-c').value, type: $('#f-ty').value, city: $('#f-v').value, price: Math.round(Number($('#f-p').value)), desc: $('#f-d').value.trim() };
+  if (f.type === 'location') {
+    const dep = $('#r-dep').value.trim();
+    f.rent = { unit: $('#r-u').value, from: $('#r-from').value, to: $('#r-to').value, hours: $('#r-h').value.trim(), min: $('#r-min').value.trim(), deposit: dep === '' ? null : Math.round(Number(dep)), delivery: $('#r-del').checked };
+    if (f.rent.from && f.rent.to && f.rent.to < f.rent.from) return pubErr('La date de fin ne peut pas être avant la date de début.');
+    if (f.rent.deposit !== null && (!Number.isFinite(f.rent.deposit) || f.rent.deposit < 0 || f.rent.deposit > 1000000000)) return pubErr('Caution invalide.');
+  }
   if (f.t.length < 3) return pubErr('Le titre doit avoir au moins 3 caractères.');
   if (!Number.isFinite(f.price) || f.price < 0 || f.price > 1000000000) return pubErr('Prix invalide.');
   if (!f.desc) return pubErr('Ajoutez une description.');
@@ -477,6 +521,13 @@ document.addEventListener('click', e => {
   else if (act === 'help') openOv('<h2>Aide et avis</h2>' + helpHtml(), 'help');
   else if (act === 'legal') showLegal(a.dataset.k);
   else if (act === 'img') { st.imgIdx = Number(a.dataset.i); showListing(st.listing, true); }
+  else if (act === 'gprev' || act === 'gnext') slide(act === 'gnext' ? 1 : -1);
+  else if (act === 'copylink') {
+    const url = shareUrl(st.listing);
+    const done = () => toast('Lien copié');
+    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(url).then(done, () => toast(url));
+    else toast(url);
+  }
   else if (act === 'rmphoto') {
     const p = st.form.photos.splice(Number(a.dataset.i), 1)[0];
     if (p && p.id) st.form.removed.push(p);
@@ -486,11 +537,32 @@ document.addEventListener('click', e => {
   else if (act === 'del') run(removeListing(id));
   else if (act === 'delacc') { st.delAcc = true; run(showAccount('settings', false)); }
 });
+// Photos suivante / précédente (flèches, clavier, glissement du doigt)
+function slide(dir) {
+  if (!st.listing || st.ov !== 'listing') return;
+  const n = st.listing.imgs.length;
+  if (n < 2) return;
+  st.imgIdx = (st.imgIdx + dir + n) % n;
+  showListing(st.listing, true);
+}
+let touchX = null;
+document.addEventListener('touchstart', e => { touchX = e.target.closest && e.target.closest('#gal') ? e.touches[0].clientX : null; }, { passive: true });
+document.addEventListener('touchend', e => {
+  if (touchX === null) return;
+  const dx = e.changedTouches[0].clientX - touchX;
+  touchX = null;
+  if (Math.abs(dx) > 40) slide(dx < 0 ? 1 : -1);
+}, { passive: true });
 $('#ov').addEventListener('click', e => { if (e.target === $('#ov')) closeOv(); });
-document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('#ov').hidden) closeOv(); });
+document.addEventListener('keydown', e => {
+  if ($('#ov').hidden) return;
+  if (e.key === 'Escape') closeOv();
+  else if ((e.key === 'ArrowRight' || e.key === 'ArrowLeft') && !/INPUT|TEXTAREA|SELECT/.test(e.target.tagName)) slide(e.key === 'ArrowRight' ? 1 : -1);
+});
 document.addEventListener('change', e => {
   const t = e.target;
   if (t.id === 'f-img') { addFormPhotos(t.files); t.value = ''; }
+  else if (t.id === 'f-ty') { const bx = $('#rent-box'); if (bx) bx.hidden = t.value !== 'location'; }
   else if (t.name === 'theme') { applyTheme(t.value); store.set('lc_theme', t.value); }
 });
 
@@ -562,6 +634,9 @@ CITIES.forEach(c => { const o = document.createElement('option'); o.value = c; o
 renderAcct();
 renderChips();
 loadListings(true);
+// Lien direct vers une annonce : ...?a=identifiant
+const deepId = new URLSearchParams(location.search).get('a');
+if (deepId && /^[0-9a-f-]{36}$/i.test(deepId)) openListing(deepId).catch(fail);
 
 api.onAuth((event, session) => {
   // On attend un instant : Supabase demande de ne pas appeler la base directement dans cette fonction
